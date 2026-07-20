@@ -111,7 +111,9 @@ self.XI_mol_in, self.Is0, self.Not0 = Comp_filter(
 | `P, z` 露点 | `flash_DewT` | `T_dew, x, K` |
 | `T, z` 泡点 | `flash_BubP` | `P_bub, y, K` |
 | `T, z` 露点 | `flash_DewP` | `P_dew, x, K` |
-| 焓/热负荷、定压 | `flash_HP` / `flash_DP` | 温度、相态及相组成解 |
+| `P, duty, z` 定压热负荷 | `flash_DP` | 温度、相态及相组成解 |
+| `T, duty, z` 定温热负荷 | `flash_DT` | 压力、相态及相组成解 |
+| 焓、定压 | `flash_HP` | 温度、相态及相组成解 |
 | 液液平衡 | `LLE` / `LLE_T` | 两液相分裂结果 |
 | 汽液液平衡 | `VLLE` / `VLLE_PE` | 三相平衡结果 |
 
@@ -283,8 +285,53 @@ self.FH, self.FHL, self.FHV = self.get_H_F_LV_JB(
 )
 ```
 
-已知入口焓流与目标热负荷、需要反求出口状态时，优先使用 `flash_DP` 或 `flash_HP`；
-不要在新模块外层手写温度扫描或有限差分闪蒸循环。
+已知入口焓流与目标热负荷、需要反求出口状态时，优先使用 `flash_DP` / `flash_DT` /
+`flash_HP`；不要在新模块外层手写温度扫描或有限差分闪蒸循环。
+
+### 热负荷闪蒸 flash_DP 与 flash_DT
+
+已知压力与目标热负荷,反求温度、汽化率与相组成:
+
+```python
+result = self.flash_DP(
+    FHin=self.FFin.FH,          # 入口焓流
+    F_mol=self.FFin.F_mol,      # 进料摩尔流量
+    target_duty=self.duty,      # 目标热负荷
+    P=self.P_in,
+    ZI=self.XI_mol,
+    T0=self.T0, K0=self.K0, VF0=self.VF0,
+    SkipIndex=self._Is0,
+    Instantiation=True,
+    DOA=self.DOA, K_time=self.K_time,
+)
+self.T = result.T
+```
+
+已知温度与目标热负荷,反求压力、汽化率与相组成:
+
+```python
+result = self.flash_DT(
+    FHin=self.FFin.FH,
+    F_mol=self.FFin.F_mol,
+    T=self.T,
+    target_duty=self.duty,
+    ZI=self.XI_mol,
+    VF0=self.VF0, P0=self.P0, K0=self.K0,
+    SkipIndex=self._Is0,
+    Instantiation=True,
+    DOA=self.DOA, K_time=self.K_time,
+)
+self.P_in = result.P
+```
+
+说明:
+
+1. 两个接口以 `Instantiation=True` 返回 `FlashResults`(字段同上文稳定字段表);
+   业务模块一律用 `Instantiation=True`,`Instantiation=False` 的返回形态未验证。
+2. `FHin` 是入口流股焓流(`FFin.FH`),与 `target_duty` 一起构成能量衡算基准;
+   不要改用自算相焓拼装替代。
+3. 签名取自真实调用方(FlashTank 稳态源码);若实际参数不符,以运行时报错为准
+   回查,不要凭猜测增删参数。
 
 ## LLE 与 VLLE
 
