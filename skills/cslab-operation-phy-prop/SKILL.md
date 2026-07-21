@@ -9,9 +9,22 @@ description: Use when developing a domain/operation module that inherits Flash a
 `Flash` 的模块实例，例如 `Flow`、`Feed`、`FUG`，而不是独立创建
 `MethodH`、`MethodLV` 或属性计算类。
 
-部署环境可能只有 Python 3.7 的 `.pyd` 编译模块。本 Skill 中列出的公共继承关系、
-方法、参数、结果形态和模板就是稳定契约。直接使用它们；不要读取、验证、反编译、
-monkey patch 编译模块，也不要调用双下划线私有方法。
+部署环境可能只有 Python 3.7 的 `.pyd` 编译模块。涉及 `Flash` 继承的公共方法、
+参数、结果字段和返回形态时，优先查询 `domain/operation/Flash.pyi`；它是基于
+`Flash.py` 生成的机器可读公共契约。本 Skill 负责物性选择、坐标系与调用口径。
+
+不要读取、验证、反编译、monkey patch 编译模块，也不要调用双下划线私有方法。
+
+## Stub 查询规则
+
+1. 调用 `Flash` 的 `phy_prop`、`flash_*`、焓流或热负荷辅助方法前，先读
+   `domain/operation/Flash.pyi` 中的 `Flash` 声明，确认参数名与返回形态。
+2. `Instantiation=True` 的闪蒸调用返回 `FlashResults`；相组成字段是活跃组分局部
+   坐标，必须继续搭配原 `SkipIndex` 使用。
+3. `.pyi` 未声明的 `Flash` 成员不作为跨 `.pyd` 部署的稳定依赖。需要新公共契约时，
+   先补充并验证 `.pyi`，不要依赖源码私有实现。
+4. 与物性相关的属性代码、单位、数组 shape 和 `SkipIndex` 规则仍以本 Skill 为准；
+   `.pyi` 不替代这些物理口径。
 
 ## 继承与初始化
 
