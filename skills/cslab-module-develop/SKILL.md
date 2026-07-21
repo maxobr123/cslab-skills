@@ -80,7 +80,9 @@ description: Use as the entry-point workflow when developing, modifying, or debu
 
 1. 起点可用平台骨架:`GET moduleT/pyTemp?pk=<id>&class_name=<类名>`。
    注意骨架只有形参与空 `Run`,**缺 `Data`/`Method_bag` 形参、缺基类继承**,
-   必须按契约补全。
+   必须按契约补全。若返回 500「float()/int() ... 'NoneType'」,是模板里存在
+   默认值为空的数值属性(服务端缺陷,见 `cslab-modulet-api` 的 pyTemp 陷阱),
+   不要重试——直接按步骤 3 的对照表手写骨架,不损失任何信息。
 2. 加载 `cslab-module-contract` 落实平台通用契约:注入、startFun、返回约定、
    三条输出通道、feedback。
 3. 加载所属**族包**写类结构与算法体(稳态单元:`cslab-operation-skeleton`,

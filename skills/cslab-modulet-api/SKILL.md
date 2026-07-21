@@ -16,7 +16,11 @@ description: Use when querying or modifying CSLab module templates over HTTP - d
   (服务端取空格后第二段,前缀词不敏感)。
 - 响应统一包装:`{"status": 200, "msg": "成功", "data": <业务数据>}`,先判
   `status` 再取 `data`。
-- 401/接口不可达时向开发者确认 ENV,不要伪造数据继续。
+- token 有效期很短(服务端 `JWT_EXPIRATION_DELTA` 配置,当前部署实测 900 秒)。
+  过期返回 `{"status": "40001", "msg": "签名已过期", "state": "40001"}`——注意
+  此处 `status` 是**字符串**,判等时别只匹配整数。遇到即请开发者重新登录刷新
+  `CSLAB_TOKEN`,重试无意义。
+- 401/40001/接口不可达时向开发者确认 ENV,不要伪造数据继续。
 
 ## 接口总表
 
@@ -136,9 +140,23 @@ scheduler 按 `importlib.import_module("domain." + 路径)` 加载,再 `getattr`
 ## pyTemp 骨架生成
 
 `GET moduleT/pyTemp?pk=<id>&class_name=<类名>` 返回按模板属性+节点生成的类骨架
-(形参带类型标注与默认值)。局限:**无 `Data`/`Method_bag` 形参、无基类继承、
+(整数/浮点形参带 `int`/`float` 类型标注;**默认值一律渲染为 `=None`**,模板里的
+默认值不会出现在骨架里)。局限:**无 `Data`/`Method_bag` 形参、无基类继承、
 `Run` 为空桩**,只能当起点,必须按 `cslab-module-contract` 与所属族包
 (如 `cslab-operation-skeleton`)的契约补全。
+
+**已知 500 陷阱**:服务端对 classify=0/1 的属性无防御地执行 `int(value)` /
+`float(value)`。模板中任一数值属性默认值为 NULL(属性类型切换会把 value 置空,
+库中常见)时,接口返回 500「服务器内部错误: float() argument must be a string
+or a number, not 'NoneType'」(整数属性则是 int() 版本)。这是模板脏数据触发的
+服务端缺陷,不是调用方式问题,重试无用。**兜底**:改走 `moduleT/?pk=<id>` 模板
+详情,按 moduleProp 的 `name`/`classify` 与 moduleNode 的 `name` 手工拼骨架——
+pyTemp 本就不渲染默认值,兜底不损失信息;同时把详情中 classify=0/1 且 value 为
+空的属性名报给开发者,在模板里补上默认值后 pyTemp 即恢复。
+
+其他坑:`class_name` 缺省或非法标识符不报错,渲染出 `class None:` 之类非法代码;
+`pk` 不存在返回 200 的空壳骨架而非 404;prop 名与 node 名重名会生成重复形参。
+拿到骨架先过一遍语法检查(如 `ast.parse`)再用。
 
 ## 写接口与权限
 
