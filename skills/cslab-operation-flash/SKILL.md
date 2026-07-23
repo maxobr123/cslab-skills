@@ -1,39 +1,25 @@
 ---
 name: cslab-operation-flash
-description: Use when developing a domain/operation module that inherits Flash and needs TP, TVF, PVF, bubble-point, dew-point, energy-duty, LLE, or VLLE flash calculations.
+description: Use when developing CSLAB domain/operation code that calls inherited Flash APIs for TP, TVF, PVF, duty, bubble/dew, LLE, phase-flow, enthalpy, or duty calculations.
 ---
 
-# Flash 子类闪蒸计算
+# Flash 业务调用
 
-本 Skill 面向 AI 开发继承 `domain.operation.Flash.Flash` 的流程单元。它定义
-`Flash` 的公共调用契约、算法口径、结果回写和能量计算复用方式。
+本 Skill 指导开发人员在 `domain/operation/` 业务模块中调用继承得到的热力学能力。
+开发人员只编排公开接口、流股和业务结果，不开发 K 值、EOS、活度系数、
+Rachford-Rice、泡露点求根或其他物性算法。
 
-部署环境可能只有 Python 3.7 的 `.pyd` 编译模块。公共 API 优先以
-`domain/operation/Flash.pyi` 为准：该存根从同目录 `Flash.py` 生成，声明可调用
-方法、参数、稳定结果字段及返回形态。本 Skill 说明流程口径和模板；遇到参数名、
-可选参数或结果字段问题，先查 `.pyi`，不要猜测。
+需要确认方法的参数和返回顺序时，读取
+[references/flash-api.md](references/flash-api.md)。该参考只列业务调用面，不代表可以
+调用同名类的内部 helper。
 
-不要读取、验证、反编译、monkey patch 编译模块，也不要调用双下划线私有迭代辅助函数。
+## 开发边界
 
-## Stub 查询规则
-
-1. 先读取 `domain/operation/Flash.pyi`，按类 `Flash` 查找目标公共方法。
-2. `@overload` 中 `Instantiation=False` 是元组返回；`Instantiation=True` 是
-   `FlashResults` 返回。业务模块需要回写状态时，优先后者。
-3. 仅 `.pyi` 声明的方法可视为跨 `.py/.pyd` 部署的稳定调用面；不要依赖未声明的
-   实例字段、内部 helper 或双下划线方法。
-4. `.pyi` 与当前调用模板冲突时，停止猜测并以目标版本已验证的公共接口更新 `.pyi`；
-   不得通过探测、反编译或 monkey patch `.pyd` 解决。
-5. `.pyi` 不替代坐标系规则：`ZI/K0/x/y` 仍为活跃组分局部坐标，`SkipIndex` 仍为
-   全组分坐标。
-
-## 继承边界
-
-```text
-MethodH <- MethodLV <- Flash <- 业务单元
-```
-
-已有继承示例包括 `Flow`、`Feed`、`FUG`、`RBatch` 和 `MESH_Comm`。
+1. 业务类通过继承 `Flash` 或已有 operation 基类获得方法，不单独构造物性算法对象。
+2. 必须把 `Data`、`Method_bag` 和目标基类要求的迭代参数传给 `super().__init__`。
+3. 只调用本文和 API 参考中列出的公共方法。
+4. 不读取、反编译、反射、monkey patch `.pyd`，不调用双下划线方法。
+5. 缺少已验证契约的接口不得靠猜参数名试调用；优先改用本文覆盖的稳定业务组合。
 
 ```python
 from domain.operation.Flash import Flash
@@ -58,318 +44,184 @@ class MyOperation(Flash):
         )
 ```
 
-子类只调用公共 `flash_*`、`get_H_LV_JB`、`get_duty_by_flash`、`phy_prop` 等方法。
-不要复制或重写 `Flash` 内部的 K 值迭代、Rachford-Rice 求根、泡露点求根或 `A` 修正算法。
+若目标类继承的是 `Flow`、`Utility_U` 等已有基类，沿用该类经过验证的构造契约，
+不要为了直接继承 `Flash` 改变既有 MRO。
 
-## 闪蒸前的组成准备
+## 单位与坐标
 
-闪蒸使用活跃组分局部向量 `ZI`，并附带全组分坐标下的 `SkipIndex`。
+| 量 | 单位/约束 |
+|---|---|
+| `T` | K |
+| `P`、`P_in` | Pa |
+| `VF`、`GasRat` | 气相摩尔分率，0 到 1 |
+| `F_mol`、`FL_mol`、`FV_mol` | kmol/s |
+| `H_mol`、`HL_mol`、`HV_mol` | J/kmol |
+| `FH`、`FHL`、`FHV`、`FHin`、`target_duty` | J/s，即 W |
+
+闪蒸始终区分两套组分坐标：
+
+- `ZI`、`K0`、`LXI_mol`、`VXI_mol` 是活跃组分局部向量。
+- `SkipIndex` 是被过滤组分在完整项目组分表中的全局索引。
+- 对外写入 Flow 的组成必须恢复为完整组分坐标。
 
 ```python
 self.XI_mol_in, self.Is0, self.Not0 = Comp_filter(
-    np.asarray(LVXI_mol, dtype=float)
+    np.asarray(full_xi_mol, dtype=float)
 )
+
+full_vapor_xi = Comp_restore(self.VXI_mol, self.Is0, self.Not0)
 ```
 
-调用约束：
+调用前检查 `ZI` 一维、非负、和接近 1。传入非空 `SkipIndex` 时，不得同时传完整长度
+组成。不得在业务代码中再次切片 CAS、MW、纯物性或二元参数。
 
-1. `ZI` 是一维、非负、已归一化的活跃组分摩尔分率。
-2. `SkipIndex=self.Is0` 是原全组分坐标的跳过索引。
-3. `len(ZI) + len(SkipIndex)` 应对应全组分数。
-4. `K0`、`LXI_mol`、`VXI_mol` 等相组成也必须使用相同活跃组分局部坐标。
-5. 子类不应再次切片模型参数；`Flash -> MethodLV -> MethodH` 会通过子 `PropertyPackage` 处理上下文。
+## 求解器选择
 
-## 算法口径
-
-常规气液闪蒸的算法结构固定为：
-
-1. `GetPs_P(T, P, ZI, SkipIndex)` 计算基础相平衡常数。
-2. 以非理想修正 `A` 构造：
-   ```text
-   K_i = GetPs_P_i(T, P, ZI) * A_i
-   ```
-3. 以 Rachford-Rice 型方程求汽化率或内层未知状态变量：
-   ```text
-   sum(z_i * (1 - K_i) / (1 + VF * (K_i - 1))) = 0
-   ```
-4. 更新并归一化两相组成：
-   ```text
-   x_i = z_i / (1 + VF * (K_i - 1))
-   y_i = K_i * x_i
-   ```
-5. 调用 `get_A(T, P, XI=x, YI=y, ...)` 更新非理想修正。
-6. 迭代至 `A` 与前一轮值在 `DOA` / `abs_DOA` 容差内收敛。
-
-外层更新策略：
-
-| 参数 | 含义 |
-|---|---|
-| `iterative_method="Wegstein"` | 默认加速迭代；连续流程优先使用 |
-| `iterative_method="Partial"` | 固定部分松弛 |
-| `iterative_method="Direct"` | 不做外层松弛 |
-| `iteration_factor` | 初始松弛因子，常用 0.3 |
-| `DOA` | 相对收敛容差 |
-| `abs_DOA` | 绝对收敛容差 |
-| `K_time` | 最大迭代次数 |
-
-纯组分、全零组成、泡点外单液相、露点外单气相等情况已有历史边界分支。子类应接受框架结果，不要强制改为双相解。
-
-## 公共闪蒸接口
-
-| 已知条件 | 公共方法 | 标准返回，`Instantiation=False` |
+| 已知业务规格 | 调用 | 求解量 |
 |---|---|---|
-| `T, P, z` | `flash_TP` | `VF, x, y, K` |
-| `T, VF, z` | `flash_TVF` | `P, x, y, K` |
-| `P, VF, z` | `flash_PVF` | `T, x, y, K` |
-| 任意两项 `T/P/VF` | `flash_TPVF` | `T, P, VF, x, y, K` |
-| `P, z` 泡点 | `flash_BubT` | `T_bub, y, K` |
-| `P, z` 露点 | `flash_DewT` | `T_dew, x, K` |
-| `T, z` 泡点 | `flash_BubP` | `P_bub, y, K` |
-| `T, z` 露点 | `flash_DewP` | `P_dew, x, K` |
-| 压力、热负荷、z | `flash_DP` | 反求温度后的 `T, P, VF, x, y, K` |
-| 温度、热负荷、z | `flash_DT` | 反求压力后的 `T, P, VF, x, y, K` |
-| 比焓差、定压、z | `flash_HP` | 温度、相态及相组成解 |
-| 液液平衡 | `LLE` / `LLE_T` | 两液相分裂结果 |
-| 汽液液平衡 | `VLLE` / `VLLE_PE` | 三相平衡结果 |
+| `T + P + z` | `flash_TP` | `VF, x, y, K` |
+| `T + VF + z` | `flash_TVF` | `P, x, y, K` |
+| `P + VF + z` | `flash_PVF` | `T, x, y, K` |
+| `P + FHin + duty + z` | `flash_DP` | `T, VF, x, y, K` |
+| `T + FHin + duty + z` | `flash_DT` | `P, VF, x, y, K` |
+| 定压泡点/露点 | `flash_BubT` / `flash_DewT` | 温度及另一相组成 |
+| 定温泡点/露点 | `flash_BubP` / `flash_DewP` | 压力及另一相组成 |
+| 液液分层 | `LLE` | 液液分率、两液相组成、`KLL` |
 
-当 `Instantiation=True` 时，主闪蒸与泡露点接口返回 `FlashResults`。稳定字段为：
+`TP_BaseOn`、`Te_BaseOn`、`Pe_BaseOn`、`DP_BaseOn`、`DT_BaseOn` 由
+`Input_type1` 和 `Input_type2` 的中文规格组合判断：
+
+| 标志 | 无序规格组合 |
+|---|---|
+| `TP_BaseOn` | `温度` + `压力` |
+| `Te_BaseOn` | `温度` + `汽化率` |
+| `Pe_BaseOn` | `压力` + `汽化率` |
+| `DP_BaseOn` | `压力` + `热负荷` |
+| `DT_BaseOn` | `温度` + `热负荷` |
+
+不要根据字段是否为 `None` 自行设置这些标志。历史 `Flow.flashdp()` 和
+`Flow.flashdt()` 的名称与其内部物理调用相反，新代码必须直接使用 `flash_DP` 和
+`flash_DT`。
+
+## 返回模式
+
+常用 `flash_*` 支持两类返回：
+
+- 默认元组模式适合局部计算，必须按 API 参考中的固定顺序解包。
+- `Instantiation=True` 返回结果对象，适合需要完整回写状态的业务单元。
+
+结果对象的常规稳定字段为：
 
 ```text
 T, P, VF, ZI, LXI_mol, VXI_mol, K, A, SkipIndex
 ```
 
-业务模块需要存储闪蒸状态时，优先使用 `Instantiation=True`。
+不要把 `A` 当作 `K`。三相扩展字段只在对应三相接口实际返回时使用。
+
+## 标准状态回写
+
+```python
+result = self.flash_TP(
+    T=self.T,
+    P=self.P_in,
+    ZI=self.XI_mol_in,
+    SkipIndex=self.Is0,
+    VF0=self.GasRat0,
+    K0=self.K0,
+    DOA=self.DOA,
+    K_time=self.K_time,
+    Instantiation=True,
+)
+
+required = ("T", "P", "VF", "ZI", "LXI_mol", "VXI_mol", "K", "SkipIndex")
+if isinstance(result, str) or not all(hasattr(result, name) for name in required):
+    raise RuntimeError(str(result))
+
+vectors = [
+    np.asarray(result.ZI, dtype=float),
+    np.asarray(result.LXI_mol, dtype=float),
+    np.asarray(result.VXI_mol, dtype=float),
+    np.asarray(result.K, dtype=float),
+]
+try:
+    values = np.asarray([result.T, result.P, result.VF], dtype=float)
+except (TypeError, ValueError):
+    raise RuntimeError("flash returned non-real T, P, or VF")
+if values.shape != (3,) or not np.all(np.isfinite(values)):
+    raise RuntimeError("flash returned an invalid state")
+if values[0] <= 0.0 or values[1] <= 0.0 or not 0.0 <= values[2] <= 1.0:
+    raise RuntimeError("flash returned nonphysical T, P, or VF")
+if any(value.ndim != 1 or value.size != len(self.XI_mol_in) for value in vectors):
+    raise RuntimeError("flash returned incompatible component coordinates")
+if any(not np.all(np.isfinite(value)) for value in vectors):
+    raise RuntimeError("flash returned non-finite component values")
+if np.any(vectors[0] < 0.0) or not np.isclose(vectors[0].sum(), 1.0):
+    raise RuntimeError("flash returned invalid feed composition")
+if values[2] < 1.0 and (
+    np.any(vectors[1] < 0.0) or not np.isclose(vectors[1].sum(), 1.0)
+):
+    raise RuntimeError("flash returned invalid liquid composition")
+if values[2] > 0.0 and (
+    np.any(vectors[2] < 0.0) or not np.isclose(vectors[2].sum(), 1.0)
+):
+    raise RuntimeError("flash returned invalid vapor composition")
+if np.any(vectors[3] < 0.0):
+    raise RuntimeError("flash returned invalid K values")
+result_skip = [] if result.SkipIndex is None else list(result.SkipIndex)
+expected_skip = [] if self.Is0 is None else list(self.Is0)
+if result_skip != expected_skip:
+    raise RuntimeError("flash changed SkipIndex unexpectedly")
+
+# Validate first, then publish the new instance state.
+self.T = float(values[0])
+self.P_in = float(values[1])
+self.GasRat = float(values[2])
+self.XI_mol_in = vectors[0]
+self.LXI_mol = vectors[1]
+self.VXI_mol = vectors[2]
+self.K = vectors[3]
+```
+
+保留调用前生成且已校验相等的 `Is0/Not0`，不要用只有 `SkipIndex`、没有 `Not0` 的
+结果对象替换其中一半坐标元数据。回写后处理相边界：`VF <= 0` 时不存在气相，
+`VF >= 1` 时不存在液相。下游端口是可复用对象时必须清空不存在相的旧状态，不能简单
+跳过写入而留下上次运行结果。
 
 ## 热负荷闪蒸
 
-参数和完整可选初值见 `Flash.pyi` 的 `flash_DP` / `flash_DT`。两者均使用：
-
-| 参数 | 含义 | 单位 |
-|---|---|---|
-| `FHin` | 入口总焓流 | J/s（W） |
-| `F_mol` | 出口总摩尔流量 | kmol/s |
-| `target_duty` | 指定热负荷 | J/s（W） |
-| `ZI` | 活跃组分进料摩尔组成 | 无量纲 |
-
-已知压力与热负荷，反求温度时使用 `flash_DP`：
+压力加热负荷反求温度：
 
 ```python
 result = self.flash_DP(
     FHin=self.Fin.FH,
-    F_mol=self.Fin.F_mol,
+    F_mol=self.F_mol,
     target_duty=self.Duty,
     P=self.P_in,
     ZI=self.XI_mol_in,
     T0=self.T0,
     VF0=self.GasRat0,
     K0=self.K0,
-    BubT=self.BubT,
-    DewT=self.DewT,
-    BubK=self.BubK,
-    DewK=self.DewK,
-    BubT0=self.BubT0,
-    DewT0=self.DewT0,
-    BubK0=self.BubK0,
-    DewK0=self.DewK0,
     SkipIndex=self.Is0,
     DOA=self.DOA,
     K_time=self.K_time,
     Instantiation=True,
 )
-self.T = result.T
 ```
 
-已知温度与热负荷，反求压力时使用 `flash_DT`：
+温度加热负荷反求压力时改用 `flash_DT`，传 `T` 和可选 `P0`。`F_mol` 必须是
+出口总摩尔流量且不能为零；`target_duty` 是相对 `FHin` 的净热负荷。求解后使用同一套
+标准状态校验和回写，不要只写回求解的 `T` 或 `P`。`flash_DT` 在 duty 超出给定温度
+下的可达区间时可能返回诊断字符串；必须将其作为受控失败处理，不能访问 `.T`。
+
+## 相流量与能量
+
+闪蒸完成后复用公共组合方法：
 
 ```python
-result = self.flash_DT(
-    FHin=self.Fin.FH,
-    F_mol=self.Fin.F_mol,
-    T=self.T,
-    target_duty=self.Duty,
-    ZI=self.XI_mol_in,
-    VF0=self.GasRat0,
-    P0=self.P0,
-    K0=self.K0,
-    BubP=self.BubP,
-    DewP=self.DewP,
-    BubK=self.BubK,
-    DewK=self.DewK,
-    SkipIndex=self.Is0,
-    DOA=self.DOA,
-    K_time=self.K_time,
-    Instantiation=True,
-)
-self.P_in = result.P
-```
-
-两种热负荷闪蒸完成后，统一用本 Skill 的 TP 回写字段模板写回
-`T/P_in/GasRat/XI_mol_in/LXI_mol/VXI_mol/K`。
-
-## 业务规格标志
-
-`TP_BaseOn`、`Te_BaseOn`、`Pe_BaseOn`、`DP_BaseOn`、`DT_BaseOn` 是 `Flash`
-的只读 property，详情见 `Flash.pyi`。它们由 `Input_type1` 和 `Input_type2` 的
-中文规格组合动态判断，不是根据 `T/P/GasRat/Duty` 是否为 `None` 自动置位：
-
-| 标志 | `Input_type1/2` 的无序组合 | 对应求解 |
-|---|---|---|
-| `TP_BaseOn` | `温度` + `压力` | `flash_TP` |
-| `Te_BaseOn` | `温度` + `汽化率` | `flash_TVF` |
-| `Pe_BaseOn` | `压力` + `汽化率` | `flash_PVF` |
-| `DP_BaseOn` | `压力` + `热负荷` | `flash_DP` |
-| `DT_BaseOn` | `温度` + `热负荷` | `flash_DT` |
-
-不要把历史 `Flow.flashdp()` / `Flow.flashdt()` 的辅助方法名作为物理条件依据：
-其名称与实际调用的 `flash_DT` / `flash_DP` 相反。新模块按上述物理名称直接调用。
-
-## 标准 TP 闪蒸与结果回写
-
-`Flow` 风格的模块应按以下顺序调用：
-
-```python
-def run_tp_flash(self):
-    result = self.flash_TP(
-        T=self.T,
-        P=self.P_in,
-        ZI=self.XI_mol_in,
-        SkipIndex=self.Is0,
-        VF0=self.GasRat0,
-        K0=self.K0,
-        DOA=self.DOA,
-        K_time=self.K_time,
-        Instantiation=True,
-    )
-
-    self.T = result.T
-    self.P_in = result.P
-    self.GasRat = result.VF
-    self.XI_mol_in = result.ZI
-    self.LXI_mol = result.LXI_mol
-    self.VXI_mol = result.VXI_mol
-    self.K = result.K
-    self.Is0 = result.SkipIndex
-    return result
-```
-
-`self.XI_mol_in` 是进料组成；`self.LXI_mol` 是液相组成；`self.VXI_mol` 是气相组成。
-不要将其中任一个全组分向量与 `self.Is0` 混用。
-
-## TVF、PVF 与统一分派
-
-已知温度和汽化率，求压力：
-
-```python
-result = self.flash_TVF(
-    T=self.T,
+self.FV_mol, self.FL_mol = self.get_F_LV_JB(
+    F_mol=self.F_mol,
     VF=self.GasRat,
-    ZI=self.XI_mol_in,
-    P0=self.P0,
-    K0=self.K0,
-    SkipIndex=self.Is0,
-    DOA=self.DOA,
-    K_time=self.K_time,
-    Instantiation=True,
 )
-self.P_in = result.P
-```
-
-已知压力和汽化率，求温度：
-
-```python
-result = self.flash_PVF(
-    P=self.P_in,
-    VF=self.GasRat,
-    ZI=self.XI_mol_in,
-    T0=self.T0,
-    K0=self.K0,
-    SkipIndex=self.Is0,
-    DOA=self.DOA,
-    K_time=self.K_time,
-    Instantiation=True,
-)
-self.T = result.T
-```
-
-业务仅需要根据给定的两个 `T/P/VF` 自动选择求解器时：
-
-```python
-result = self.flash_TPVF(
-    T=self.T,
-    P=self.P_in,
-    VF=None,
-    ZI=self.XI_mol_in,
-    SkipIndex=self.Is0,
-    Instantiation=True,
-)
-```
-
-只传入 `T/P/VF` 中任意两个有效状态变量，第三项必须为 `None`。例如上例是
-已知 `T/P`、求 `VF`；不要同时传三个值，也不要把三个都设为未知。
-
-## 泡点与露点
-
-```python
-self.BubT, y_bub, self.BubTK = self.flash_BubT(
-    P=self.P_in,
-    ZI=self.XI_mol_in,
-    T0=self.BubT0,
-    K0=self.BubTK0,
-    SkipIndex=self.Is0,
-    DOA=self.DOA,
-    K_time=self.K_time,
-)
-
-self.DewT, x_dew, self.DewTK = self.flash_DewT(
-    P=self.P_in,
-    ZI=self.XI_mol_in,
-    T0=self.DewT0,
-    K0=self.DewTK0,
-    SkipIndex=self.Is0,
-    DOA=self.DOA,
-    K_time=self.K_time,
-)
-```
-
-需要定温泡露点压力时，对应使用 `flash_BubP` 和 `flash_DewP`，并传递 `P0`、`K0`。
-
-## 初值复用与失效条件
-
-相邻流程迭代、时间步或撕裂流股中，状态变化较小时应复用：
-
-```text
-K0, VF0, T0, P0, BubT0, DewT0, BubTK0, DewTK0
-```
-
-以下情况必须清空或不传旧初值：
-
-1. 方法包变更。
-2. `SkipIndex` 变更。
-3. 活跃组分数或组成列坐标变更。
-4. 组成、温度、压力发生显著跳变。
-5. 上一步求解未收敛或产生非有限结果。
-
-不要将不同活跃组分坐标系下的 `K` 直接复用。
-
-## 全组分结果恢复
-
-`Comp_filter` 生成的 `Is0` / `Not0` 用于分别标识全组分中的零组分与活跃组分。
-业务结果需要从活跃局部向量恢复到全组分坐标时，使用：
-
-```python
-from domain.math.mathmethod import Comp_restore
-
-full_values = Comp_restore(values, self.Is0, self.Not0)
-```
-
-`values` 必须是活跃组分局部坐标的向量；`Is0` 和 `Not0` 都是原全组分坐标索引。
-不要对 `FlashResults.LXI_mol`、`VXI_mol` 或 `K` 先按 `Is0` 二次切片再恢复。
-
-## 焓与热负荷
-
-不要在子类重复实现单相/两相焓选择。闪蒸完成后优先调用：
-
-```python
 self.H_mol, self.HL_mol, self.HV_mol = self.get_H_LV_JB(
     T=self.T,
     P=self.P_in,
@@ -377,15 +229,6 @@ self.H_mol, self.HL_mol, self.HV_mol = self.get_H_LV_JB(
     LXI_mol=self.LXI_mol,
     VXI_mol=self.VXI_mol,
     SkipIndex=self.Is0,
-)
-```
-
-再计算相流量、焓流量：
-
-```python
-self.FV_mol, self.FL_mol = self.get_F_LV_JB(
-    F_mol=self.F_mol,
-    VF=self.GasRat,
 )
 self.FH, self.FHL, self.FHV = self.get_H_F_LV_JB(
     F_mol=self.F_mol,
@@ -397,36 +240,52 @@ self.FH, self.FHL, self.FHV = self.get_H_F_LV_JB(
 )
 ```
 
-已知入口焓流与目标热负荷、需要反求出口状态时，优先使用 `flash_DP` 或 `flash_HP`；
-不要在新模块外层手写温度扫描或有限差分闪蒸循环。
+`get_H_LV_JB` 是相边界安全的组合方法：它根据 `VF` 只计算存在相，不存在相焓保持
+为零。因此应传入闪蒸返回的同坐标相组成并调用一次，不要在业务层自行重写相焓分支。
 
-## LLE 与 VLLE
+注意 `get_F_LV_JB` 返回气相在前 `(FV_mol, FL_mol)`，而
+`get_H_F_LV_JB` 的参数是液相流量在前。调用后者必须使用关键字。
 
-仅在业务模型明确需要液液分层或汽液液三相平衡时调用：
+已知入口焓流并已完成出口闪蒸时，用 `get_duty_by_flash` 计算净热负荷，不手工重复
+相焓选择。
 
-```python
-lle_result = self.LLE(
-    T=self.T,
-    P=self.P_in,
-    ZI=self.XI_mol_in,
-    key_comp=key_comp,
-    SkipIndex=self.Is0,
-    DT=self.DT,
-    DOA=self.DOA,
-    K_time=self.K_time,
-)
-```
+## 暖启动
 
-不要用 `LLE` 或 `VLLE` 替代正常的两相 `flash_TP`。涉及液液分裂时，应保持各液相组成、
-液相分率和总物料衡算在同一活跃组分坐标系内。
+同一方法包、同一 `SkipIndex`、相邻状态变化较小时可以复用 `K0`、`VF0`、`T0`、
+`P0` 和泡露点初值。以下任一情况必须丢弃旧初值：
 
-## 禁止事项
+1. `Method_bag` 或 `SkipIndex` 改变。
+2. 活跃组分数或向量列坐标改变。
+3. 状态或组成发生显著跳变。
+4. 上一步不收敛、抛出异常或返回非有限值。
 
-1. 不调用 `__get_P`、`__get_T`、`__get_BubT`、`__get_DewT` 等私有求根函数。
-2. 不复制 `GetPs_P`、`get_A`、Rachford-Rice 或 Wegstein 迭代逻辑。
-3. 不将多工况数组直接传给 `flash_*`。这些求解器是单工况迭代接口。
-4. 不把全组分组成传给带 `SkipIndex` 的闪蒸接口。
-5. 不对主闪蒸返回的 `T/P/VF/K/x/y` 失败静默使用 `np.nan_to_num` 伪造有效相态。
-   已确认零相流的派生物性后处理可按邻近模块历史口径有限化，但必须不掩盖闪蒸或
-   物性失败，并保留受控告警路径。
-6. 不依赖源码存在；不读取、修改、探测或反编译 `.pyd` 模块。
+## 泡露点与 LLE
+
+泡点返回平衡气相组成，露点返回平衡液相组成。元组模式统一为
+`(状态值, 另一相组成, K)`，具体签名见 API 参考。
+
+`LLE` 元组为 `(LLRat, L1XI_mol, L2XI_mol, KLL)`。业务代码必须拒绝 `None`、
+`LLRat <= 0`、`LLRat >= 1` 或两液相组成实质相同的伪分层结果。普通 VLE 不得改用
+`LLE` 或 `VLLE`。
+
+`flash_HP`、`flash_SatT`、`VLLE_PE` 和历史 `*_Opration`/`simple` 接口不属于本 Skill
+推荐的新业务调用面。没有目标版本的已验证调用样例时，不生成这些接口的新代码。
+
+## 失败处理
+
+1. 调用前校验温度、压力、流量、组成和规格是否完整。
+2. 捕获项目中已知的输入或收敛异常，保留原异常上下文并调用 `feedback`。
+3. 闪蒸失败后清除暖启动值，返回受控失败，不写入出口 Flow。
+4. 不对失败的 `T/P/VF/K/x/y` 使用 `np.nan_to_num` 伪造有效状态。
+5. 不在外层自行扫描温度、压力或实现有限差分求解来替代公开闪蒸接口。
+
+## 完成检查
+
+- 求解器与物理规格相符。
+- 所有参数使用关键字，单位正确。
+- 局部组成和全局 `SkipIndex` 匹配。
+- 返回模式和解包顺序正确。
+- 结果对象先校验类型、有限性、shape 和 `SkipIndex`，再完整回写状态。
+- `VF=0/1` 时不存在相得到显式处理。
+- 相流量、焓和 duty 使用公共 helper。
+- 失败路径不会污染输出流股或保留失效暖启动。
