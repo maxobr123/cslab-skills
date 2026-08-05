@@ -7,7 +7,8 @@ description: Use when writing any CSLab algorithm module regardless of family (s
 
 本 Skill 定义**所有模块族共享**的运行契约,由模板系统与调度框架决定,与具体
 设备类型无关。族专有的变量词汇、继承方法、算法惯用法见对应族包
-(稳态单元:`cslab-operation-skeleton`)。
+(通用稳态单元：`cslab-operation-unit-skeleton`；FlashTank：
+`cslab-operation-flashtank`)。
 
 ## 参数注入契约(核心)
 
@@ -86,4 +87,4 @@ description: Use when writing any CSLab algorithm module regardless of family (s
 2. 在模块内做单位换算或接收非 SI 输入。
 3. 输出通道缺失(算对了但前端/库/下游拿不到)。
 4. 未连接节点(`None`)不判空就访问。
-5. 不依赖源码存在;不读取、修改、探测或反编译 `.so` 编译模块。
+5. 不依赖编译模块源码存在；不读取、修改、探测或反编译 `.pyd/.so`。

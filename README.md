@@ -19,9 +19,10 @@ L2 平台通用契约(所有族共享,由模板系统+调度框架决定)
     cslab-module-verify       取数接口、环境约束、验证检查单
 
 L3 模块族包(每族一组,按 L0 流水线增量生产)
-    cslab-operation-skeleton  稳态单元族骨架:变量/方法词汇表、*_BaseOn、Run 五段式
+    cslab-operation-unit-skeleton 通用稳态单元骨架:契约取证、Run、端口与失败回滚
+    cslab-operation-flashtank FlashTank 专用骨架:MRO、变量词汇、*_BaseOn、暖启动
     cslab-operation-flash     闪蒸计算契约(Flash 家族方法签名)
-    cslab-operation-phy-prop  物性调用契约(phy_prop 属性总表)
+    cslab-operation-phy-prop  统一物性入口契约(phy_prop 标量/矩阵与属性总表)
     (动态/控制/设计/化原等族包待建)
 ```
 
@@ -30,6 +31,14 @@ L3 模块族包(每族一组,按 L0 流水线增量生产)
 - `skills/` — 各 SKILL.md,按上表分层
 - `provenance/` — 溯源材料:skill 事实断言的证据来源与已知边界,见其 README
 - `examples/` — 本地参考实现与试验代码(gitignored,不入库)
+
+## Codex 项目安装与同步
+
+- 本仓库的 `skills/` 是 Skill 唯一管理源和 Git 提交位置。
+- 主项目 `D:/project/cslab_onedrive/.agents/skills/` 是 Codex 自动发现的运行副本。
+- 修改 Skill 时先更新本仓库并完成校验，再同步到 `.agents/skills/`；若在运行副本中
+  临时修订，必须回写本仓库后再提交，禁止形成两套长期分叉内容。
+- 提交前逐个比较同名 `SKILL.md` 的 SHA256，并确认目录集合一致；推送本仓库后才算完成。
 
 ## 维护约定(活文档纪律)
 

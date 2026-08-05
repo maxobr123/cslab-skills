@@ -9,11 +9,14 @@ description: Use when implementing a CSLAB domain/operation business unit Run() 
 已有 Flow 端口、继承方法、规格、闪蒸、物性、能量、公用工程和平台输出。
 
 闪蒸方法参数与返回规则使用 `cslab-operation-flash`，物性代码与 shape 使用
-`cslab-operation-phy-prop`。
+`cslab-operation-phy-prop`。目标模板确认为 FlashTank 家族时，再加载
+`cslab-operation-flashtank`；其他单元不得套用 FlashTank 专有字段和 MRO。
 
 ## 先确认目标单元契约
 
-修改或新建单元前，从同一模块族的可读业务源码确认：
+修改或新建单元前，按以下优先级确认契约：模板详情、项目 Skill、开发人员负责范围内的
+可读业务源码、开发者确认。依赖模块只有 `.pyd/.so` 时，使用 Skill 公开契约，不读取、
+反编译、反射或试探编译模块。确认：
 
 1. 实际基类和 `super().__init__` 参数。
 2. 构造器注入的输入/输出 Flow 参数名及端口语义。

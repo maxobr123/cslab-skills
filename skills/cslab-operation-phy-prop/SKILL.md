@@ -1,6 +1,6 @@
 ---
 name: cslab-operation-phy-prop
-description: Use when developing CSLAB domain/operation code that calls inherited phy_prop for enthalpy, density, heat capacity, entropy, Gibbs energy, vapor pressure, fugacity, or paired multi-case properties without implementing property algorithms.
+description: Use when developing CSLAB domain/operation code that uses the unified inherited phy_prop interface for scalar or matrix enthalpy, density, heat capacity, entropy, Gibbs energy, vapor pressure, fugacity, and other supported properties without reading or implementing property internals.
 ---
 
 # 业务物性调用
@@ -9,9 +9,31 @@ description: Use when developing CSLAB domain/operation code that calls inherite
 选择正确属性、准备状态与组成、处理返回值，不是开发 `MethodH`、`MethodLV`、EOS、
 活度系数、纯物性关联式或混合规则。
 
-选择属性代码、输入和结果单位时，读取
-[references/property-catalog.md](references/property-catalog.md)。闪蒸及能量组合契约使用
+本 Skill 同时承担 `phy_prop` 的业务公开接口和属性目录契约。开发环境即使只有编译后的
+`domain/method`，也只依赖本文，不读取、探测或重建 `MethodH`、`MethodLV`、EOS、
+活度系数、纯物性关联式和混合规则。闪蒸及能量组合契约使用
 `cslab-operation-flash`。
+
+## 唯一物性入口
+
+业务层只调用：
+
+```python
+self.phy_prop(
+    Property=None,
+    T=None,
+    P=None,
+    V=None,
+    XI=None,
+    XI_mol=None,
+    SkipIndex=None,
+    MixMode=1,
+)
+```
+
+`phy_prop` 同时承担标量与矩阵输入。标量状态走标量计算；`T/P` 为数组或组成是二维
+矩阵时，统一入口自动进入矩阵路径。业务代码不直接调用 `phy_propArray`、
+`CalculateArray`、Property 类、EOS、Phase 或活度模型对象。
 
 ## 调用层级
 
@@ -125,6 +147,36 @@ if self.GasRat > 0.0:
 `GAMMAS`、`PHI_L_MIX`、`PHI_V_MIX` 返回活跃组分向量，不是混合标量。
 `Henry` 可能只返回当前活跃亨利组分，长度不能假定等于全部活跃组分数。
 
+## 完整属性代码目录
+
+以下代码是业务层允许传给 `Property` 的稳定目录，共 80 项。不要根据类名、文件名或
+编译模块内容发现额外属性；新增属性必须先更新本契约并完成接口验证。
+
+纯组分/逐组分属性（27）：
+
+`CPIG`, `CP_DEP_V`, `CP_V`, `CP_DEP_L`, `CP_L`, `CP_S`, `CP_INF`, `S_INF`,
+`EOV`, `CV_V`, `ST`, `CV_L`, `TC_L`, `TC_V`, `VP`, `VS_L`, `VS_V`, `DS_L`,
+`DS_V`, `DS_S`, `VOL_L`, `VOL_V`, `MDS_L`, `MDS_V`, `DC`, `P`, `BP`。
+
+混合物及相属性（28）：
+
+`H_DEP_L`, `H_DEP_V`, `G_DEP_V`, `G_DEP_L`, `H_I_V`, `H_I_S`, `H_I_L`,
+`H_V`, `H_S`, `H_L`, `PHI_L`, `PHI_V`, `S_DEP_L`, `S_DEP_V`, `S_I_L`,
+`S_I_V`, `G_I_V`, `G_I_L`, `S_V`, `S_L`, `G_L`, `G_V`, `CP_L_MIX`,
+`CP_V_MIX`, `DS_L_MIX`, `DS_V_MIX`, `P_MIX`, `GAMMAS`。
+
+混合物基础/扩展属性（25）：
+
+`G_EX_L_MIX`, `G_EX_V_MIX`, `G_V_MIX`, `G_L_MIX`, `H_EX_V_MIX`,
+`H_EX_L_MIX`, `H_L_MIX`, `H_V_MIX`, `ST_MIX`, `S_EX_V_MIX`, `S_EX_L_MIX`,
+`S_L_MIX`, `S_V_MIX`, `TC_L_MIX`, `TC_V_MIX`, `VS_L_MIX`, `VS_V_MIX`,
+`PHI_V_MIX`, `PHI_L_MIX`, `VOL_L_MIX`, `VOL_V_MIX`, `CV_V_MIX`,
+`CV_L_MIX`, `MDS_V_MIX`, `MDS_L_MIX`, `Henry`。
+
+返回形态按属性语义判断：纯组分/逐组分属性返回活跃组分向量；常规 `_MIX` 属性返回
+单个混合物结果；`GAMMAS`、`PHI_L_MIX`、`PHI_V_MIX` 返回活跃组分向量；`Henry`
+仅保证返回当前亨利组分结果。矩阵输入在这些返回形态前增加 `case_count` 维。
+
 ## 能量计算
 
 单独研究某一相或塔板属性时可直接调用 `H_L_MIX` 或 `H_V_MIX`。完整流程闪蒸后的
@@ -172,8 +224,8 @@ self.FH, self.FHL, self.FHV = self.get_H_F_LV_JB(
 
 ## 多工况矩阵
 
-数组输入仍调用公开 `phy_prop`，由其进入矩阵路径。不要直接调用内部属性类的
-`CalculateArray`，也不要为新批量功能写逐工况标量循环。
+数组输入仍调用唯一公开入口 `phy_prop`，由其自动进入矩阵路径。不要直接调用
+`phy_propArray` 或内部属性类的 `CalculateArray`，也不要为新批量功能写逐工况标量循环。
 
 ```python
 def calculate_vapor_enthalpy_cases(self, t_cases, p_cases, y_cases):

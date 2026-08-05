@@ -19,7 +19,8 @@ description: Use as the entry-point workflow when developing, modifying, or debu
 
 | 族 | 族包 Skill | 状态 |
 |---|---|---|
-| 稳态单元(`domain/operation/`) | `cslab-operation-skeleton` + `cslab-operation-flash` + `cslab-operation-phy-prop` | 可用 |
+| 通用稳态单元(`domain/operation/`) | `cslab-operation-unit-skeleton` + `cslab-operation-flash` + `cslab-operation-phy-prop` | 可用 |
+| FlashTank 家族 | 在通用稳态组合上增加 `cslab-operation-flashtank` | 可用 |
 | 动态 / 控制 / 设计 / 化原 等 | 待建 | 无族包时明确告知开发者该族契约尚未沉淀,不要套用稳态族词汇硬写 |
 
 ## 环境准备
@@ -85,17 +86,19 @@ description: Use as the entry-point workflow when developing, modifying, or debu
    不要重试——直接按步骤 3 的对照表手写骨架,不损失任何信息。
 2. 加载 `cslab-module-contract` 落实平台通用契约:注入、startFun、返回约定、
    三条输出通道、feedback。
-3. 加载所属**族包**写类结构与算法体(稳态单元:`cslab-operation-skeleton`,
-   闪蒸用 `cslab-operation-flash`,物性用 `cslab-operation-phy-prop`)。
-4. 全程遵守通用契约与族包的禁止事项(不反编译 `.so`、不混用组分坐标系、
+3. 加载所属**族包**写类结构与算法体（通用稳态单元：
+   `cslab-operation-unit-skeleton`；FlashTank 再增加 `cslab-operation-flashtank`；
+   闪蒸用 `cslab-operation-flash`；物性统一用 `cslab-operation-phy-prop`）。
+4. 全程遵守通用契约与族包的禁止事项（不反编译 `.pyd/.so`、不混用组分坐标系、
    不把多工况数组传给 `flash_*`)。
 
 ## 步骤 5:本地验证
 
 加载 `cslab-module-verify`:写 `__main__` 脚手架(`obtainData` 免鉴权取数 → 建
 `Data`/`Flow` → 建模块 → `Run()` → 检查 `result`),按其检查单核对返回值形态、
-落库属性、出口流股回写。注意 `.so` 是 Linux/Python3.7 二进制,验证必须在对应
-环境执行,macOS 本机只能做静态审查。
+落库属性、出口流股回写。使用 Python 3.7.6，并确认依赖编译模块与当前平台匹配：
+Windows 使用 `cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。缺少兼容
+二进制时才退化为静态审查。
 
 ## 步骤 6:交付与登记
 
@@ -115,4 +118,5 @@ description: Use as the entry-point workflow when developing, modifying, or debu
 4. 前端展示走 `result`,落库走同名实例属性赋值,出口状态走写出口流股——三条通道
    相互独立,漏一条就是"算对了但看不到"。
 5. 未连接节点注入 `None`,访问前判空。
-6. 接口取不到的信息(模板字段、物性行为)直接问开发者或查代码,不要编造。
+6. 接口取不到的信息先查对应 Skill，再查自己负责范围内源码或直接问开发者；不得通过
+   读取、反编译、反射或试探 `.pyd/.so` 补全契约，也不得编造。

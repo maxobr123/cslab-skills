@@ -1,13 +1,15 @@
 ---
-name: cslab-operation-skeleton
-description: Use when writing or modifying a steady-state unit-operation module in domain/operation (FlashTank, Heater, Pump style). Defines this family's native attribute vocabulary, inherited-method vocabulary, Input_type conditions, *_BaseOn dispatch, Run() structure, and Flow stream contract.
+name: cslab-operation-flashtank
+description: Use only when writing or modifying a FlashTank-family steady-state unit in domain/operation whose template or verified contract uses FFin/FDout/FWout, Flash specification dispatch, vessel fields, reaction support, or utility accounting.
 ---
 
-# 稳态单元模块骨架(operation 族,L3)
+# FlashTank 家族专用骨架(operation 族,L3)
 
-本 Skill 是 `domain/operation/` 稳态单元族的骨架契约,标准范式取自 FlashTank
-(平衡闪蒸罐)。**必须使用本族自有的变量名与继承方法,不发明同义新名、不重写
-基类算法。** 先读平台通用契约 `cslab-module-contract`;闪蒸方法细节见
+本 Skill 只定义 FlashTank（平衡闪蒸罐）及经模板确认与其同契约模块的专用范式。
+不得把这里的 MRO、`FFin/FDout/FWout`、`DutyIn`、容器字段或反应字段套到 Heater、
+Pump 或其他稳态单元。通用稳态单元先读 `cslab-operation-unit-skeleton`；确认目标属于
+FlashTank 家族后再加载本文。必须沿用该家族已验证的变量名与继承方法，不发明同义新名、
+不重写基类算法。平台通用契约见 `cslab-module-contract`；闪蒸方法细节见
 `cslab-operation-flash`,物性方法见 `cslab-operation-phy-prop`。
 
 ## 继承与 __init__ 模式
@@ -38,8 +40,9 @@ class MyTank(Utility_U, Vessel, ReactionBase):
 
 1. 形参顺序:流股对象在前(`FFin`/`FDout`/`FWout`,多流股用 `Flow_list`),
    然后输入条件对、`Method_bag`/`Data`、迭代参数、设备参数,末尾 `**kwargs`。
-2. 基类按需组合:闪蒸/物性能力来自 Flash 家族(`Utility_U` 等基类已在链上),
-   公用工程加 `Utility_U`,容器加 `Vessel`,反应加 `ReactionBase`。
+2. 仅当目标 FlashTank 模板或本家族已验证契约包含对应能力时组合基类：闪蒸/物性能力
+   来自 Flash 家族，公用工程使用 `Utility_U`，容器使用 `Vessel`，反应使用
+   `ReactionBase`。不得据此推断其他 operation 模块的 MRO。
 3. 公用工程惯用法:`if Utility: self.Utility = self.Data.PUW[Utility]`。
 4. 反应门控:`self.RList`(反应 id 列表)非空才做反应计算。
 5. **输出/占位属性必须在 `__init__` 初始化**(0 或零向量):模板中所有
@@ -88,7 +91,7 @@ class MyTank(Utility_U, Vessel, ReactionBase):
 | 来源 | 方法 | 用途 |
 |---|---|---|
 | Flash 家族 | `flash_TP` / `flash_TVF` / `flash_PVF` / `flash_TPVF` / `flash_BubT` / `flash_DewT` / `flash_BubP` / `flash_DewP` / `flash_DP` / `flash_DT` / `flash_HP` / `LLE` / `VLLE` | 闪蒸与泡露点,签名见 `cslab-operation-flash` |
-| Flash 家族 | `phy_prop` / `phy_propArray` | 物性,见 `cslab-operation-phy-prop` |
+| Flash 家族 | `phy_prop` | 标量/矩阵统一物性入口,见 `cslab-operation-phy-prop` |
 | Flash 家族 | `get_H_LV_JB` / `get_F_LV_JB` / `get_H_F_LV_JB` / `get_duty_by_flash` | 相焓/相流量/焓流/热负荷组合 |
 | `Utility_U` | `Public_F_P(Utility=self.Utility, Duty=self.duty, T=self.T)` → `(FU_mass, electricity, Price_U, CO2_emissions)` | 公用工程耗量/电耗/费用/碳排 |
 | `ReactionBase` | `Reaction_Base(comp_list=, FXI_mol_L=, FXI_mol_V=, F_vol_L=, F_vol_V=, RP=, RT=, VF=)` → `(FXI_mol_out, FL_mol, LXI_mol, A, FV_mol, VXI_mol)` | 反应计算,标准调用见下方 `getReaction` |
@@ -210,7 +213,7 @@ Flow 常用字段——读进口:`XI_mol`、`F_mol`、`FXI_mol`、`FLXI_mol`/`FV
 `result` 键示例(格式契约见 `cslab-module-contract`):出口温度、出口压力、
 汽化率、热负荷、压降等,中文键 + `{"value", "unitType"}`。
 
-## 族禁止事项
+## FlashTank 家族禁止事项
 
 1. 不发明词汇表之外的同义属性名(如 `self.temp` 替代 `self.T`)。
 2. 不重写/复制基类算法(闪蒸迭代、相焓分支、Rachford-Rice 等)。

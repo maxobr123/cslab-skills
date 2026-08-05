@@ -1,6 +1,6 @@
 ---
 name: cslab-operation-flash
-description: Use when developing CSLAB domain/operation code that calls inherited Flash APIs for TP, TVF, PVF, duty, bubble/dew, LLE, phase-flow, enthalpy, or duty calculations.
+description: Use when developing CSLAB domain/operation code that calls inherited Flash APIs for TP, TVF, PVF, duty, bubble/dew, LLE, phase-flow, enthalpy, or duty calculations without reading or probing compiled implementations.
 ---
 
 # Flash 业务调用
@@ -9,17 +9,46 @@ description: Use when developing CSLAB domain/operation code that calls inherite
 开发人员只编排公开接口、流股和业务结果，不开发 K 值、EOS、活度系数、
 Rachford-Rice、泡露点求根或其他物性算法。
 
-需要确认方法的参数和返回顺序时，读取
-[references/flash-api.md](references/flash-api.md)。该参考只列业务调用面，不代表可以
-调用同名类的内部 helper。
+本 Skill 同时承担 Flash 业务公开接口契约。开发环境即使只有 `.pyd`/`.so`，也按本文
+给出的参数、返回、单位和失败规则调用，不读取、反编译、反射或试探编译实现。
 
 ## 开发边界
 
 1. 业务类通过继承 `Flash` 或已有 operation 基类获得方法，不单独构造物性算法对象。
 2. 必须把 `Data`、`Method_bag` 和目标基类要求的迭代参数传给 `super().__init__`。
-3. 只调用本文和 API 参考中列出的公共方法。
+3. 只调用本文列出的公共方法；本文没有声明的接口视为未建立业务契约。
 4. 不读取、反编译、反射、monkey patch `.pyd`，不调用双下划线方法。
 5. 缺少已验证契约的接口不得靠猜参数名试调用；优先改用本文覆盖的稳定业务组合。
+
+## 公开接口契约
+
+业务代码统一使用关键字参数。下表中的“初值/控制”均为可选参数；除非目标模块已有明确
+约定，不依赖默认值表达业务语义。
+
+| 方法 | 必需业务输入 | 常用初值/控制 | `Instantiation=False` 返回 |
+|---|---|---|---|
+| `flash_TP` | `T, P, ZI` | `SkipIndex, VF0, K0, DewT, BubT, iteration_factor, iterative_method, DOA, abs_DOA, K_time` | `VF, LXI_mol, VXI_mol, K` |
+| `flash_TVF` | `T, VF, ZI` | `P0, K0, SkipIndex, iteration_factor, iterative_method, DOA, abs_DOA, K_time` | `P, LXI_mol, VXI_mol, K` |
+| `flash_PVF` | `P, VF, ZI` | `T0, K0, DewT, BubT, SkipIndex, iteration_factor, iterative_method, DOA, abs_DOA, K_time` | `T, LXI_mol, VXI_mol, K` |
+| `flash_TPVF` | `T/P/VF` 中恰好两项及 `ZI` | `T0, P0, VF0, SkipIndex, DOA, abs_DOA, K_time` | `T, P, VF, LXI_mol, VXI_mol, K` |
+| `flash_BubT` / `flash_DewT` | `P, ZI` | `T0, K0, SkipIndex, DOA, abs_DOA, K_time` | `T, 另一相组成, K` |
+| `flash_BubP` / `flash_DewP` | `T, ZI` | `P0, K0, SkipIndex, DOA, abs_DOA, K_time` | `P, 另一相组成, K` |
+| `flash_DP` | `FHin, F_mol, target_duty, P, ZI` | `T0, K0, VF0, 泡露点初值, SkipIndex, DOA, abs_DOA, K_time` | `T, P, VF, LXI_mol, VXI_mol, K` |
+| `flash_DT` | `FHin, F_mol, T, target_duty, ZI` | `P0, K0, VF0, 泡露点初值, SkipIndex, DOA, abs_DOA, K_time` | `T, P, VF, LXI_mol, VXI_mol, K` |
+| `LLE` | `T, P, ZI` 及目标版本已验证的分层参数 | `SkipIndex, DOA, K_time` | `LLRat, L1XI_mol, L2XI_mol, KLL` |
+
+设置 `Instantiation=True` 时，常规闪蒸统一返回结果对象，稳定字段为
+`T, P, VF, ZI, LXI_mol, VXI_mol, K, A, SkipIndex`。不得混用元组返回顺序与结果
+对象字段。`flash_*` 只接受单工况标量状态；多工况物性统一调用 `phy_prop`。
+
+公共组合方法契约：
+
+| 方法 | 参数 | 返回 |
+|---|---|---|
+| `get_F_LV_JB` | `F_mol, VF` | `FV_mol, FL_mol` |
+| `get_H_LV_JB` | `T, P, VF, LXI_mol, VXI_mol, SkipIndex` | `H_mol, HL_mol, HV_mol` |
+| `get_H_F_LV_JB` | `F_mol, FL_mol, FV_mol, H_mol, HL_mol, HV_mol` | `FH, FHL, FHV` |
+| `get_duty_by_flash` | 使用目标模块已具备的入口焓流和闪蒸状态 | 相对入口的净热负荷 |
 
 ```python
 from domain.operation.Flash import Flash

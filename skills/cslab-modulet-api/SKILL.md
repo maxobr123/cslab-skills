@@ -143,7 +143,8 @@ scheduler 按 `importlib.import_module("domain." + 路径)` 加载,再 `getattr`
 (整数/浮点形参带 `int`/`float` 类型标注;**默认值一律渲染为 `=None`**,模板里的
 默认值不会出现在骨架里)。局限:**无 `Data`/`Method_bag` 形参、无基类继承、
 `Run` 为空桩**,只能当起点,必须按 `cslab-module-contract` 与所属族包
-(如 `cslab-operation-skeleton`)的契约补全。
+(通用稳态单元使用 `cslab-operation-unit-skeleton`，FlashTank 另加
+`cslab-operation-flashtank`)的契约补全。
 
 **已知 500 陷阱**:服务端对 classify=0/1 的属性无防御地执行 `int(value)` /
 `float(value)`。模板中任一数值属性默认值为 NULL(属性类型切换会把 value 置空,

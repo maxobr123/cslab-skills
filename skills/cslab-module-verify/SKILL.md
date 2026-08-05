@@ -7,11 +7,14 @@ description: Use when locally testing or debugging a CSLab domain/operation modu
 
 ## 环境硬约束(先读)
 
-- `domain/` 下的 `.so` 是 **Linux + CPython 3.7** 二进制(`cpython-37m-x86_64-linux-gnu`),
-  macOS/Windows 本机无法 `import`。运行验证必须在 Linux + Python 3.7 环境
-  (关键依赖:numpy==1.18.1、scipy==1.4.1、pandas==1.0.1)。
-- 无法运行时退化为**静态审查**:按 `cslab-module-contract` 与所属族包的契约
-  逐项核对,并明确告知开发者"未运行验证"。不要谎报跑通。
+- 固定使用 **Python 3.7.6** 和项目锁定依赖。编译依赖必须与当前平台和解释器 ABI
+  匹配：Windows 使用 `*.cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。
+- 开发部门通常在大量 `.pyd/.so` 依赖下工作，只修改自己负责范围内保留的 `.py`
+  源码。编译依赖视为稳定公开能力，不读取、修改、反编译、反射或试探其内部实现；调用
+  契约以项目 Skill 为准。
+- 当前平台存在匹配二进制时正常运行验证。只有缺少兼容二进制、依赖服务或必要测试数据
+  时才退化为**静态审查**：按 `cslab-module-contract` 与所属族包逐项核对，并明确说明
+  “未运行验证”及具体原因，不得笼统归因于操作系统。
 - 取数接口 `obtainData/` 免鉴权,但需要能访问 `${CSLAB_SERVER_HOST}`。
 
 ## 取数接口
