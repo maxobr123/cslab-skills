@@ -1,19 +1,20 @@
 ---
 name: cslab-module-develop
-description: Use as the entry-point workflow when developing, modifying, or debugging a CSLab domain/operation algorithm module. Covers requirement clarification, locating the module template via moduleT API, deriving the constructor contract, writing the algorithm, local verification, and delivery.
+description: Use as the mandatory entry-point workflow when developing, modifying, or debugging any CSLab engineering algorithm module, including operation, dynamic, control, design, chemical-principle, and property-method work. Requires template/contract discovery, online research, candidate design comparison, developer selection and assumption confirmation before implementation, followed by verification and delivery.
 ---
 
-# CSLab 业务模块开发工作流
+# CSLab 工程算法开发工作流
 
-本 Skill 是开发 `domain/operation/` 业务算法模块的**总入口**。收到"写/改某个模块算法"
-的需求时,从这里开始,按步骤推进,并在对应步骤加载配套 Skill:
+本 Skill 是开发所有 CSLab 工程算法模块的**强制总入口**。适用于模板驱动业务模块，
+也适用于没有 moduleT 模板的物性、控制和数值算法。除非开发者已在提示词中明确给出并
+确认方案，否则必须先完成调研、方案选择和假设确认，不能直接写代码。
 
 | 层 | 配套 Skill | 何时加载 |
 |---|---|---|
-| L2 | `cslab-modulet-api` | 步骤 2、3、6:查模板分类/列表/属性,生成骨架,改模板 |
-| L2 | `cslab-module-contract` | 步骤 4:平台通用运行契约(注入、startFun、输出通道、feedback) |
-| L2 | `cslab-module-verify` | 步骤 5:本地验证与调试 |
-| L3 | 模块族包 | 步骤 4:按目标模块所属族加载(见下表) |
+| L2 | `cslab-modulet-api` | 模板驱动模块：定位模板、推导注入契约、生成骨架、回填槽位 |
+| L2 | `cslab-module-contract` | 编码前：核对注入、入口、输出通道、feedback 与源码文档契约 |
+| L2 | `cslab-module-verify` | 实现后：单模块、源码加载、整图和边界验证 |
+| L3 | 模块族包 | 调研与设计阶段：加载所属族的变量、生命周期和公开能力契约 |
 
 模块族包路由(按模板算法槽位/设备类型判断所属族):
 
@@ -21,7 +22,8 @@ description: Use as the entry-point workflow when developing, modifying, or debu
 |---|---|---|
 | 通用稳态单元(`domain/operation/`) | `cslab-operation-unit-skeleton` + `cslab-operation-flash` + `cslab-operation-phy-prop` | 可用 |
 | FlashTank 家族 | 在通用稳态组合上增加 `cslab-operation-flashtank` | 可用 |
-| 动态 / 控制 / 设计 / 化原 等 | 待建 | 无族包时明确告知开发者该族契约尚未沉淀,不要套用稳态族词汇硬写 |
+| 动态模块(`domain/dynamic/`) | `cslab-dynamic-module`，按设备类型再加载可用的专用族包 | 可用 |
+| 控制 / 设计 / 化原等 | 待建 | 无族包时明确告知开发者，不套用其他族词汇或模型硬写 |
 
 ## 环境准备
 
@@ -33,22 +35,19 @@ description: Use as the entry-point workflow when developing, modifying, or debu
 `obtainData/`、`storeData/` 取数接口无需鉴权。任何接口不可达或 401 时,先向开发者
 确认 ENV 是否注入,不要凭记忆猜地址或伪造数据。
 
-## 步骤 1:厘清需求
+## 第1步：建立需求事实表
 
-先弄清开发者真正要什么,再动手。逐项确认(已明确的跳过,一次只问最关键的缺口):
+从开发者提示词、模板、现有公开源码和项目约束中提取以下内容：
 
-1. **改还是新建**:是修改现有模板的算法,还是新设备/新模板?给出模板名或大致设备类型。
-2. **计算模式**:稳态 / 动态 / 化工原理 / 设计,对应模板的 `steady_module` /
-   `dynamic_module` / `chemical_principle_module` / `design_module` 四个算法槽位之一。
-3. **输入条件组合**:哪些量是用户输入(如 T/P、P/汽化率、P/热负荷),哪些是算出来的?
-   这决定算法内部走哪条闪蒸/求解分支。
-4. **进出流股**:几进几出?各是什么相态?是否有能量流(DutyIn)?
-5. **期望输出**:前端要展示哪些结果(`result` 字典)?哪些要作为模板属性落库?
-6. **附加机制**:是否涉及反应(RList)、公用工程(Utility)、动态罐体参数?
+1. 新建、修改还是故障修复；所属计算模式、设备族和目标文件。
+2. 输入、输出、端口、状态变量、初始条件、边界条件、单位和验收标准。
+3. 哪些结果需要进入 `result`、同名模板属性和出口节点。
+4. 性能、精度、稳定性、兼容性及禁止修改范围。
 
-需求含糊时先复述一遍你的理解让开发者确认,再进入下一步。
+把信息分为“已确认事实 / 待开发者确认 / 暂定推测”。提示词已明确的内容直接记录为
+确认项，不重复提问；会改变物理模型或接口的缺口必须在编码前确认。
 
-## 步骤 2:定位模板
+## 第2步：定位模板和运行契约
 
 加载 `cslab-modulet-api`,按序调用:
 
@@ -58,17 +57,18 @@ description: Use as the entry-point workflow when developing, modifying, or debu
 3. `GET moduleT/?pk=<t_module_pk>` → 拉全量模板属性(`module` / `moduleProp` /
    `moduleNode`),这是后续所有推导的事实来源。
 
-改现有算法时,`module` 里对应算法槽位的值(如 `operation.FlashTank`)就是要改的
-文件与类;新建模板时该槽位由步骤 6 回填。
+改现有算法时，对应算法槽位就是目标文件与类；新建模板时在交付阶段回填。没有模板的
+底层算法跳过本步骤的 HTTP 查询，但仍需从调用方和已有 Skill 确认公开接口。
 
-## 步骤 3:推导构造契约
+### 推导构造契约
 
 框架用 `inspect.signature(类.__init__)` 做**同名注入**,所以模板属性/节点与代码的
 对应关系是硬契约,必须先推导再写代码:
 
-1. 遍历 `moduleProp`:每个属性的 `name`(英文变量名)即候选形参名;`is_input=是`
-   的是输入参数,`is_input=否` 的是输出属性(不进构造函数,但 `Run()` 里要给同名
-   实例属性赋值才能落库)。记录每个输入的类型编码(`classify`)、默认值、单位——
+1. 遍历 `moduleProp`:每个属性的 `name`(英文变量名)即候选形参名；`is_input=是`
+   表示输入，`is_input=否` 表示输出语义，但调度下发不按该字段过滤。只有与构造形参
+   同名的属性才进入构造函数，其余在构造后挂载；输出属性在入口方法中赋同名实例属性
+   才能落库。记录类型编码(`classify`)、默认值、单位——
    **注入时不做单位换算,默认值必须已是算法期望单位(SI)**。
 2. 遍历 `moduleNode`:流股/能量节点的 `name` 即构造函数的流股形参名(如 `FFin`、
    `FDout`);`interface` 区分进出。多流股模块用 `Flow_list` 聚合形参。
@@ -77,22 +77,76 @@ description: Use as the entry-point workflow when developing, modifying, or debu
    框架按"成功、空结果"处理,属于静默假失败。
 4. 输出一张"模板属性 ↔ 形参/实例属性"对照表,作为写代码的检查基准。
 
-## 步骤 4:编写算法
+## 第3步：联网调研主要设计方案
+
+根据开发者提示词中的设备、过程、目标属性和工况关键词查询网络资料。优先级为：行业或
+国家标准、权威教材、同行评议论文、官方技术文档、可靠工程资料。不得使用目标 `.pyd/.so`
+替代调研，也不得把搜索摘要当作已验证公式。
+
+调研输出必须包含：
+
+1. 资料标题、链接、访问日期、适用对象和适用条件。
+2. 主要可行方案；存在实质模型选择时至少列出两个候选。
+3. 每个方案的衡算类型、状态变量、闭合关系、数值方法、精度、复杂度、性能和限制。
+4. 资料之间口径不一致时说明差异，不擅自拼接方程。
+
+网络不可用或找不到可靠来源时明确报告阻塞，向开发者索取资料或允许的模型依据，不凭
+记忆补造来源。修复既有算法时也要查询该模型或数值方法的可靠资料，确认修复没有改变
+既定物理口径。
+
+## 第4步：方案选择和模型假设确认（编码门禁）
+
+用对比表向开发者展示候选方案，给出有依据的推荐，但由开发者选择。逐项列出所有影响
+结果的假设，例如稳态/动态、理想/非理想、等温/绝热、完全混合/分层、单相/多相、
+常物性/变物性、边界处理和异常回退。说明每项假设对结果和复杂度的影响。
+
+开发者必须明确确认：
+
+- 采用的物理/经验模型和数值求解方法；
+- 状态变量、初始条件、边界条件和闭合关系；
+- 关键温度、压力、组成、流量等量是输入、固定值还是方程求解值；
+- 模型假设、适用范围和不覆盖场景。
+
+若提示词已完整指定，先复述成“已确认设计”，仅询问剩余实质缺口。**没有明确选择和
+假设确认时停止在设计阶段，不创建或修改算法源码。**
+
+## 第5步：公开计算设计
+
+编码前向开发者说明主入口（如 `Run`、`DRun`、`Calculate`）的完整计算过程：每一步先算
+什么、依赖什么、修改哪些状态、向哪个输出通道写值。复杂模块按入口分别说明初始化、
+迭代/积分、收敛、边界处理和结果回写顺序。
+
+为每条主要方程提供方程表：
+
+| 必填项 | 内容 |
+|---|---|
+| 方程名称 | 总质量、组分、能量、动量、相平衡、经验关联式或其他明确类型 |
+| 衡算对象 | 系统边界及被衡算的物质、组分、能量或动量 |
+| 公式 | 完整数学表达式 |
+| 变量表 | 每个变量的物理意义、单位、维度、正负号和数据来源 |
+| 条件 | 初始条件、边界条件、闭合关系、适用范围和已确认假设 |
+| 求解 | 解析、迭代、优化或时间积分方法，以及容差/步长 |
+
+开发者确认计算过程和方程表后，才进入实现。
+
+## 第6步：编写算法
 
 1. 起点可用平台骨架:`GET moduleT/pyTemp?pk=<id>&class_name=<类名>`。
    注意骨架只有形参与空 `Run`,**缺 `Data`/`Method_bag` 形参、缺基类继承**,
    必须按契约补全。若返回 500「float()/int() ... 'NoneType'」,是模板里存在
    默认值为空的数值属性(服务端缺陷,见 `cslab-modulet-api` 的 pyTemp 陷阱),
-   不要重试——直接按步骤 3 的对照表手写骨架,不损失任何信息。
+   不要重试——直接按第2步的对照表手写骨架,不损失任何信息。
 2. 加载 `cslab-module-contract` 落实平台通用契约:注入、startFun、返回约定、
    三条输出通道、feedback。
 3. 加载所属**族包**写类结构与算法体（通用稳态单元：
    `cslab-operation-unit-skeleton`；FlashTank 再增加 `cslab-operation-flashtank`；
-   闪蒸用 `cslab-operation-flash`；物性统一用 `cslab-operation-phy-prop`）。
+   动态模块使用 `cslab-dynamic-module`；闪蒸用 `cslab-operation-flash`；物性统一用
+   `cslab-operation-phy-prop`）。
 4. 全程遵守通用契约与族包的禁止事项（不反编译 `.pyd/.so`、不混用组分坐标系、
    不把多工况数组传给 `flash_*`)。
+5. 只实现已确认方案；新增推测或改变假设时立即停止并重新走第4、5步。
 
-## 步骤 5:本地验证
+## 第7步：本地验证
 
 加载 `cslab-module-verify`:写 `__main__` 脚手架(`obtainData` 免鉴权取数 → 建
 `Data`/`Flow` → 建模块 → `Run()` → 检查 `result`),按其检查单核对返回值形态、
@@ -100,15 +154,20 @@ description: Use as the entry-point workflow when developing, modifying, or debu
 Windows 使用 `cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。缺少兼容
 二进制时才退化为静态审查。
 
-## 步骤 6:交付与登记
+验证必须覆盖开发者选定方案中的衡算闭合、初始/边界条件、异常分支和验收标准。动态或
+上下游耦合模块按 `cslab-module-verify` 执行本地源码整图验证，不能用网页服务器上的
+算法运行结果代替。
 
-1. **算法文件**:交付 `.py`,说明落点为服务器根 `domain/operation/`(scheduler 经
-   符号链接加载,无需编译;**没有上传 API**,落文件走部署渠道)。
+## 第8步：交付与登记
+
+1. **算法文件**：交付 `.py`，落点由模板算法槽位确定，例如 `operation.X` 对应
+   `domain/operation/X.py`、`dynamic.X` 对应 `domain/dynamic/X.py`；没有上传 API，
+   文件走部署渠道。
 2. **模板回填**(新建或换文件时):用 `cslab-modulet-api` 的写接口把算法槽位设为
-   `operation.<文件名>`(类名与文件名不同时用 `operation.<文件名>;<类名>`),
+   `<目录>.<文件名>`(类名与文件名不同时用 `<目录>.<文件名>;<类名>`),
    核对 `startFun`。注意权限:系统模板需管理员,普通账号只能建个人 A 类模板。
-3. **交付说明**:向开发者汇总——改了哪些文件、模板哪些字段需要/已经变更、
-   验证结论(跑通/未跑通及原因)、遗留风险。
+3. **交付说明**：汇总已选方案、已确认假设、方程口径、计算顺序、改动文件、模板变更、
+   真实验证结果、未覆盖范围和遗留风险。
 
 ## 红线速查
 
@@ -120,3 +179,5 @@ Windows 使用 `cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。缺
 5. 未连接节点注入 `None`,访问前判空。
 6. 接口取不到的信息先查对应 Skill，再查自己负责范围内源码或直接问开发者；不得通过
    读取、反编译、反射或试探 `.pyd/.so` 补全契约，也不得编造。
+7. 未完成网络调研、方案选择、假设确认和计算设计说明前，不得进入正式编码。
+8. 不把某个设备的专用方程写成所有模块共享的通用规则。

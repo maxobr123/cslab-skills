@@ -1,9 +1,9 @@
 ---
 name: cslab-module-verify
-description: Use when locally testing or debugging a CSLab domain/operation module - the __main__ scaffold, obtainData data fetching, environment constraints, verification checklist, and deployment notes.
+description: Use when locally testing or debugging any CSLab algorithm module, including single-module tests, direct Python source loading, dynamic/full-flow execution through chemicalLib/moduleRunBase.py, obtainData fetching, verification checklists, process cleanup, and deployment notes.
 ---
 
-# 业务模块本地验证
+# CSLab 算法模块本地验证
 
 ## 环境硬约束(先读)
 
@@ -17,18 +17,36 @@ description: Use when locally testing or debugging a CSLab domain/operation modu
   “未运行验证”及具体原因，不得笼统归因于操作系统。
 - 取数接口 `obtainData/` 免鉴权,但需要能访问 `${CSLAB_SERVER_HOST}`。
 
+## 目标源码直载验证
+
+开发者要求验证新 `.py` 时，只禁用**同模块同名**目标二进制，其他依赖二进制保持不变：
+
+1. 将目标 `X.cp37-win_amd64.pyd` 改名为 `X.cp37-win_amd64.pyd1`，先确认目标名不存在；
+2. 创建或修改 `X.py`，不编译目标模块，不读取、反编译、反射或探测原二进制；
+3. 使用 `python -B` 或 `PYTHONDONTWRITEBYTECODE=1` 防止生成 `.pyc` 验收产物；
+4. 正常导入后检查模块 `__file__` 指向本地 `X.py`；这只证明导入来源，不探测实现；
+5. 测试结束按开发者要求决定是否恢复原文件名，不擅自覆盖已有文件。
+
+Windows 项目根目录运行脚本时使用：
+
+```powershell
+$env:PYTHONPATH='.'
+uv run python -B <脚本路径>
+```
+
 ## 取数接口
 
 - `POST ${CSLAB_SERVER_HOST}/cslab-server/obtainData/chemicalData/`
   body:`{"pro": <项目id>, "rely_cal_data_type": {"relyState": "RelyAll", "relyDataType": [], "方法包": [<Method_bag>]}}`
   (`rely_cal_data_type` 可省略,缺省取全部)
   → 物性/组分/方法包数据(喂给 `instantiation_data`)。
-- `POST ${CSLAB_SERVER_HOST}/cslab-server/obtainData/calModuleData/`
-  → 模块/流股/执行顺序数据。
+- `POST ${CSLAB_SERVER_HOST}/cslab-server/obtainData/CalculateData/`
+  → 项目模块属性、节点连接、流股和执行顺序数据；也可使用
+  `HttpLoadData(host).load_module_data(payload)`。
 - `pro` 是项目 id(32 位 hex),由开发者提供一个含目标组分与方法包的测试项目。
 - 历史脚本里的 `"calData"` 端点在当前服务端无对应实现,新脚手架不要用。
 
-## __main__ 脚手架模板
+## 稳态业务单模块脚手架
 
 放在模块文件末尾,单模块验证的标准范式(取数 → 建 Data → 建 Flow → 建模块 →
 `get_value` → `Run` → 看 `result`):
@@ -73,34 +91,61 @@ if __name__ == "__main__":
 4. 入口流股要先赋好状态(`flow_prop` 或先 `Run()` 上游 Feed),保证 `FFin.FH`
    等字段可用,再跑本模块。
 
-## 验证检查单
+## 通用验证检查单
 
 跑通后逐项核对,并把结论写进交付说明:
 
 1. `Run()` 返回 `(bool, dict)` 二元组,成功分支返回 `(True, self.result)`。
 2. `result` 外层是 `{"result": {...}}`,键与需求约定一致,`unitType` 拼写正确。
 3. 模板中 `is_input=否` 的每个属性,`Run()` 后同名实例属性确有值(落库通道)。
-4. 出口流股字段写全:`F_mol/P_in/T/XI_mol/GasRat`,物料衡算闭合
-   (`FL_mol + FV_mol == F_mol`,组成非负、归一)。
-5. 初值复用:同参数连跑两次结果一致且第二次更快;改输入后重跑不复用旧 `K0`。
-6. 边界工况:全液(`VF=0`)、全汽(`VF=1`)、单组分、含零组分进料不崩溃,
-   告警走 `feedback`。
-7. 失败路径:空流量/空组分/条件不足时返回 `(False, {})` 且有对应 feedback 码。
+4. 按模板和所属族契约写全出口节点字段；逐项验证质量、组分、能量或其他已选衡算闭合。
+5. 同输入重复运行结果一致；存在缓存/暖启动时验证改输入后不会复用失效状态。
+6. 覆盖所属模型的正常、边界和退化工况，数值非负性、归一性及上下限符合已确认方案。
+7. 空输入、条件不足、不收敛或不支持分支返回受控失败，告警走 `feedback`。
 8. 无 `print` 残留,无未定义变量分支(静态过一遍所有 if 分支)。
+9. 逐项验证开发者选择的模型、假设、初始条件、边界条件和验收标准；报告方程闭合误差。
+10. 源码的模块说明、方法注释、方程变量表和实际实现一致，不能保留已否决方案描述。
 
-## 整图联调(可选,成本高)
+不同模块族在以上通用项之上加载各自检查单；例如闪蒸模块检查相态与焓流，动态模块
+检查时间序列、状态连续性和守恒关系，不能把某一设备族的出口字段当作所有模块通用要求。
+
+## 本地整图与动态联调
+
+服务器网页只负责画布、模板实例值和物性数据；本地测试由本机 Python 进程加载本地
+`chemicalLib/` 与 `domain/` 文件。不得把网页服务器运行结果当作本地源码验收结果。
+
+当前项目可在根目录直接运行：
+
+```powershell
+$env:PYTHONPATH='.'
+uv run python -B chemicalLib/moduleRunBase.py
+```
+
+运行前在 `moduleRunBase.py` 核对 `host/pro/callow_way/pk`。动态 `run()` 会持续等待退出
+信号，测试必须记录本次启动的 PID，采用受控停止，并只清理本次进程。工具调用被中断后
+立即检查残留 `uv/python` 进程，不影响其他项目服务。
+
+动态 V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，模块内 `print` 可能不可见。
+临时状态观测使用现有 logger 或在重定向范围外采集，日志至少包含时间、关键状态和衡算
+输入/输出；确认成功后删除临时代码并做最终回归。
+
+整图验证至少确认：本地目标 `.py` 被加载、执行顺序正确、关键状态随时间符合所选模型、
+守恒误差在容差内、上下游边界得到更新、退出后无残留进程。
+
+## 离线整图联调
 
 `chemical-scheduler` 的 `runServerLocal` 可本地跑整张画布:数据来自
 `data/calculateDependData/<项目>/` 下的 YAML(先对线上项目 POST
-`obtainData/calModuleData|chemicalData` 导出保存),且依赖 etcd 服务。
+`obtainData/CalculateData|chemicalData` 导出保存),且依赖 etcd 服务。
 仅在需要验证多模块耦合/执行顺序时使用;单模块一律用 `__main__` 脚手架。
 
 ## 部署与登记
 
-1. 新 `.py` 落到服务器**根 `domain/operation/`**(scheduler 经符号链接可见),
-   无需编译 `.so`;**没有上传 API**,文件走部署渠道。
-2. 模板算法槽位(如 `steady_module`)指向 `operation.<文件名>`(类名不同时
-   `operation.<文件名>;<类名>`),`startFun` 与入口方法严格同名——拼错不会报错,
+1. 新 `.py` 落到模板槽位对应的 `domain/<目录>/`；例如 `operation.X` 对应
+   `domain/operation/X.py`，`dynamic.X` 对应 `domain/dynamic/X.py`。没有上传 API，
+   文件走部署渠道。
+2. 模板算法槽位指向 `<目录>.<文件名>`(类名不同时
+   `<目录>.<文件名>;<类名>`),`startFun` 与入口方法严格同名——拼错不会报错,
    会静默按成功处理,必须人工核对。
 3. 上线前在测试项目里从前端触发一次计算,确认前端展示、落库属性、下游流股三条
    通道都有值。

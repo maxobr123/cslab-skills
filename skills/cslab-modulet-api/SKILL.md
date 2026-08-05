@@ -6,8 +6,8 @@ description: Use when querying or modifying CSLab module templates over HTTP - d
 # moduleT 模板接口契约
 
 模板系统是"模块参数的唯一事实来源":一个模板(moduleT)定义了模块的基础信息、
-参数属性(moduleProp)、连接节点(moduleNode),以及指向 `domain/operation/`
-算法类的路径。开发算法前先通过这些接口取模板,推导构造契约。
+参数属性(moduleProp)、连接节点(moduleNode),以及指向 `domain/` 下对应算法目录的
+类路径。开发模板驱动算法前先通过这些接口取模板,推导构造契约。
 
 ## 地址与鉴权
 
@@ -90,11 +90,25 @@ description: Use when querying or modifying CSLab module templates over HTTP - d
 
 槽位值即算法路径,写法三选一:
 
-1. `operation.<文件名>` —— 类名 = 点分末段(文件名与类名一致时);
-2. `operation.<文件名>;<类名>` —— 类名与文件名不同时(分隔符 `; ； , ， |` 均可);
+1. `<目录>.<文件名>` —— 类名 = 点分末段，例如 `operation.FlashTank`、
+   `dynamic.Dtank_Open`；
+2. `<目录>.<文件名>;<类名>` —— 类名与文件名不同时(分隔符 `; ； , ， |` 均可);
 3. `.py/.pyd/.so` 绝对路径。
 
 scheduler 按 `importlib.import_module("domain." + 路径)` 加载,再 `getattr` 取类。
+
+## 项目实例数据与本地算法边界
+
+`moduleT` 是模板定义事实源；具体项目中的实际属性值、节点连接和执行顺序来自
+`POST obtainData/CalculateData/`。项目联调可通过
+`HttpLoadData(host).load_module_data(payload)` 获取，其中 payload 至少含 `pro` 和
+`callow_item`，并按运行入口补充 `canvas/pk/special_pk/is_custom_sequence/`
+`is_only_checked/need_converge`。
+
+项目数据只来自服务器，本地 `chemicalLib/moduleRunBase.py` 仍通过模板槽位导入本地
+`domain/.../*.py` 或依赖二进制。网页服务器上的算法文件不会自动替代本地文件，也不能
+用网页运行结果证明本地源码已加载。`CalculateData` 缺少的 `is_input` 等模板语义仍以
+`moduleT` 详情为准，不根据实例值猜测输入/输出方向。
 
 ### moduleProp(参数属性)
 
@@ -144,7 +158,7 @@ scheduler 按 `importlib.import_module("domain." + 路径)` 加载,再 `getattr`
 默认值不会出现在骨架里)。局限:**无 `Data`/`Method_bag` 形参、无基类继承、
 `Run` 为空桩**,只能当起点,必须按 `cslab-module-contract` 与所属族包
 (通用稳态单元使用 `cslab-operation-unit-skeleton`，FlashTank 另加
-`cslab-operation-flashtank`)的契约补全。
+`cslab-operation-flashtank`，动态模块使用 `cslab-dynamic-module`)的契约补全。
 
 **已知 500 陷阱**:服务端对 classify=0/1 的属性无防御地执行 `int(value)` /
 `float(value)`。模板中任一数值属性默认值为 NULL(属性类型切换会把 value 置空,

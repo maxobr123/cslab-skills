@@ -1,0 +1,4 @@
+interface:
+  display_name: "CSLab 动态模块开发"
+  short_description: "开发和调试 CSLab 动态算法模块的通用生命周期契约"
+  default_prompt: "使用 $cslab-dynamic-module 设计并实现一个 CSLab 动态算法模块。"

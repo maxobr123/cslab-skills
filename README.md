@@ -11,7 +11,7 @@ L0 方法论(流水线,不是 skill 文件)
     对每个模块族重复执行;溯源材料存 provenance/
 
 L1 工作流入口(族无关)
-    cslab-module-develop      厘清需求 → 定位模板 → 推导契约 → 路由族包 → 验证 → 登记
+    cslab-module-develop      需求事实 → 联网调研 → 方案选择 → 假设确认 → 计算设计 → 实现 → 验证
 
 L2 平台通用契约(所有族共享,由模板系统+调度框架决定)
     cslab-modulet-api         模板系统接口:分类/列表/属性/pyTemp/CRUD、算法槽位
@@ -23,7 +23,8 @@ L3 模块族包(每族一组,按 L0 流水线增量生产)
     cslab-operation-flashtank FlashTank 专用骨架:MRO、变量词汇、*_BaseOn、暖启动
     cslab-operation-flash     闪蒸计算契约(Flash 家族方法签名)
     cslab-operation-phy-prop  统一物性入口契约(phy_prop 标量/矩阵与属性总表)
-    (动态/控制/设计/化原等族包待建)
+    cslab-dynamic-module      动态通用契约:Run/DRun 生命周期、状态初始化、整图源码验证
+    (控制/设计/化原等族包待建)
 ```
 
 ## 目录
