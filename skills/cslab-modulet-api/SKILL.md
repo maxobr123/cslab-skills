@@ -1,6 +1,6 @@
 ---
 name: cslab-modulet-api
-description: Use when querying or modifying CSLab module templates over HTTP - device type categories, template list, template detail (moduleProp/moduleNode), pyTemp skeleton generation, template CRUD, and the template-to-algorithm mapping fields.
+description: Use when querying or modifying CSLab module templates over HTTP - device type categories, template list, template detail (moduleProp/moduleNode), API-derived template variable catalog maintenance, pyTemp skeleton generation, template CRUD, and the template-to-algorithm mapping fields.
 ---
 
 # moduleT 模板接口契约
@@ -134,6 +134,17 @@ scheduler 按 `importlib.import_module("domain." + 路径)` 加载,再 `getattr`
 (赋值多)生成 `{属性名}__formula` 注入,`74`(引用多)不生成。
 **is_input 不参与下发过滤**(输出属性也会被打进计算数据挂到实例上),
 方向语义靠约定维护。
+
+## 后台模板变量目录
+
+查询模板详情或由开发者提供后台配置证据时，读取并持续更新
+[`references/backend-template-variables.md`](references/backend-template-variables.md)。
+目录保存后台已确认的变量名、简称、描述、单位、方向、模板范围和来源状态，供后续开发
+参考；当前模板的实际注入契约仍以本次详情响应为准。
+
+每次成功取得新的 `moduleProp` / `moduleNode` 后，都要在当前任务内完成目录比对：
+新增未收录项、补齐待补字段、按模板保留同名冲突，并纠正已被 API 证据推翻的旧推测。
+不得只在对话中展示而不沉淀，也不得把列表接口摘要或 Agent 推断当作模板详情事实。
 
 ### moduleNode(连接节点)
 

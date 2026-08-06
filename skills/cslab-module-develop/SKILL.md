@@ -56,6 +56,10 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
    有歧义时把候选列给开发者选。
 3. `GET moduleT/?pk=<t_module_pk>` → 拉全量模板属性(`module` / `moduleProp` /
    `moduleNode`),这是后续所有推导的事实来源。
+4. 读取
+   [`cslab-modulet-api/references/backend-template-variables.md`](../cslab-modulet-api/references/backend-template-variables.md)，
+   将本次详情中的新变量、已补齐字段和同名模板差异更新到后台模板变量目录；不得只用于
+   当前代码后丢弃。
 
 改现有算法时，对应算法槽位就是目标文件与类；新建模板时在交付阶段回填。没有模板的
 底层算法跳过本步骤的 HTTP 查询，但仍需从调用方和已有 Skill 确认公开接口。
@@ -76,6 +80,8 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 3. 记下 `startFun`(默认 `Run`)——类里必须有严格同名方法;拼错不会报错,
    框架按"成功、空结果"处理,属于静默假失败。
 4. 输出一张"模板属性 ↔ 形参/实例属性"对照表,作为写代码的检查基准。
+5. 对照后台模板变量目录核验变量含义；目录与本次 API 详情冲突时，以本次详情作为当前
+   模板契约，并按模板范围更新目录，不能静默覆盖成全局定义。
 
 ## 第3步：联网调研主要设计方案
 
@@ -192,6 +198,9 @@ Windows 使用 `cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。缺
    核对 `startFun`。注意权限:系统模板需管理员,普通账号只能建个人 A 类模板。
 3. **交付说明**：汇总已选方案、已确认假设、方程口径、计算顺序、改动文件、模板变更、
    真实验证结果、未覆盖范围和遗留风险。
+4. **变量目录**：本次通过 API 新取得或补齐的后台模板变量必须已写入
+   [`cslab-modulet-api/references/backend-template-variables.md`](../cslab-modulet-api/references/backend-template-variables.md)，
+   并记录模板来源和确认状态。
 
 ## 红线速查
 

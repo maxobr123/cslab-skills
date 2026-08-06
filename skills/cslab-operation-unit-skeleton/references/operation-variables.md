@@ -23,6 +23,11 @@
 输入输出角色和数据来源。不得因为本表没有收录就判定变量不存在，也不得把单个模块的
 自定义变量提升为所有模块的公共字段。
 
+通过 API 或后台配置确认的模板变量统一查阅
+[`cslab-modulet-api/references/backend-template-variables.md`](../../cslab-modulet-api/references/backend-template-variables.md)。
+该目录持续保存模板变量名、简称、描述、单位、方向、模板范围和证据状态；本表不重复定义
+其中的模块专用变量。
+
 ## 通用状态与流股
 
 | 变量 | 含义 | 单位/坐标 | 适用范围 |
@@ -108,8 +113,7 @@ Flash 活跃向量恢复为 Flow 完整坐标。不得仅用 `SkipIndex` 替换 
 | `TP_BaseOn`, `Te_BaseOn`, `Pe_BaseOn`, `DP_BaseOn`, `DT_BaseOn` | 已确认规格组合的分派标志 | Flash-capable operation |
 | `Utility` | 公用工程配置 | 不是 Flow 端口 |
 | `FU_mass`, `electricity`, `Price_U`, `CO2_emissions` | 公用工程耗量、电耗、费用、碳排 | `Public_F_P` 返回字段 |
-| `Height`, `Diameter` | 容器高度、直径 | m；仅 Vessel/FlashTank 契约 |
-| `LHMP`, `LLMP` | 高、低液位测点 | 按模板单位 |
+| `Diameter` | 容器直径 | m；仅 Vessel/FlashTank 契约 |
 | `HHL` | FlashTank 液位输出 | 按模板单位 |
 | `PW_out` | 含静液柱修正的罐底出口压力 | Pa |
 | `mode` | 设计/校核模式 | `0` 设计，`1` 校核；仅对应家族 |
@@ -117,7 +121,6 @@ Flash 活跃向量恢复为 Flow 完整坐标。不得仅用 `SkipIndex` 替换 
 | `Data` | 项目物性数据上下文 | 对象 |
 | `comp` | 当前模块从 `Data.comp` 保存的组分元数据引用 | 仅目标家族明确提供时使用 |
 | `Method_bag` | 方法包 ID | 字符串/ID |
-| `LRAT`, `PRAT`, `TRAT` | Vessel 液位、压力、温度相关设计/校核比率 | 按目标 Vessel 模板定义；不得跨家族猜单位 |
 
 ## Data 上下文字段
 
