@@ -126,56 +126,18 @@ if self.GasRat > 0.0:
 同样规则适用于 `H_*_MIX`、`S_*_MIX`、`CP_*_MIX`、`G_*_MIX` 和传递性质。
 `VF=0` 时不要调用气相属性，`VF=1` 时不要调用液相属性。
 
-## 常用属性
+## 权威属性与常量表
 
-开发业务单元时优先考虑实际调用频繁的属性：
+执行物性任务前按需读取以下引用文件：
 
-| 目标 | 液相 | 气相 | 结果 |
-|---|---|---|---|
-| 摩尔密度 | `DS_L_MIX` | `DS_V_MIX` | kmol/m3 |
-| 摩尔焓 | `H_L_MIX` | `H_V_MIX` | J/kmol |
-| 摩尔熵 | `S_L_MIX` | `S_V_MIX` | J/(kmol*K) |
-| 定压热容 | `CP_L_MIX` | `CP_V_MIX` | J/(kmol*K) |
-| Gibbs 自由能 | `G_L_MIX` | `G_V_MIX` | J/kmol |
-| 质量密度 | `MDS_L_MIX` | `MDS_V_MIX` | kg/m3 |
-| 粘度 | `VS_L_MIX` | `VS_V_MIX` | Pa*s |
-| 导热系数 | `TC_L_MIX` | `TC_V_MIX` | W/(m*K) |
+- [`references/property-catalog.md`](references/property-catalog.md)：`phy_prop` 的 79 个
+  注册属性、含义、必需参数、单位及标量/矩阵返回形态。
+- [`references/public-constants.md`](references/public-constants.md)：项目热力学、数学及
+  供应商附属常量的含义、数值、单位和引用路径。
 
-常用纯组分或逐组分属性包括 `BP`、`VP`、`H_L`、`H_V`、`H_S`、`G_V`、
-`PHI_V` 和 `EOV`。详细输入、结果形状和更多属性见属性目录。
-
-`GAMMAS`、`PHI_L_MIX`、`PHI_V_MIX` 返回活跃组分向量，不是混合标量。
-`Henry` 可能只返回当前活跃亨利组分，长度不能假定等于全部活跃组分数。
-
-## 完整属性代码目录
-
-以下代码是业务层允许传给 `Property` 的稳定目录，共 80 项。不要根据类名、文件名或
-编译模块内容发现额外属性；新增属性必须先更新本契约并完成接口验证。
-
-纯组分/逐组分属性（27）：
-
-`CPIG`, `CP_DEP_V`, `CP_V`, `CP_DEP_L`, `CP_L`, `CP_S`, `CP_INF`, `S_INF`,
-`EOV`, `CV_V`, `ST`, `CV_L`, `TC_L`, `TC_V`, `VP`, `VS_L`, `VS_V`, `DS_L`,
-`DS_V`, `DS_S`, `VOL_L`, `VOL_V`, `MDS_L`, `MDS_V`, `DC`, `P`, `BP`。
-
-混合物及相属性（28）：
-
-`H_DEP_L`, `H_DEP_V`, `G_DEP_V`, `G_DEP_L`, `H_I_V`, `H_I_S`, `H_I_L`,
-`H_V`, `H_S`, `H_L`, `PHI_L`, `PHI_V`, `S_DEP_L`, `S_DEP_V`, `S_I_L`,
-`S_I_V`, `G_I_V`, `G_I_L`, `S_V`, `S_L`, `G_L`, `G_V`, `CP_L_MIX`,
-`CP_V_MIX`, `DS_L_MIX`, `DS_V_MIX`, `P_MIX`, `GAMMAS`。
-
-混合物基础/扩展属性（25）：
-
-`G_EX_L_MIX`, `G_EX_V_MIX`, `G_V_MIX`, `G_L_MIX`, `H_EX_V_MIX`,
-`H_EX_L_MIX`, `H_L_MIX`, `H_V_MIX`, `ST_MIX`, `S_EX_V_MIX`, `S_EX_L_MIX`,
-`S_L_MIX`, `S_V_MIX`, `TC_L_MIX`, `TC_V_MIX`, `VS_L_MIX`, `VS_V_MIX`,
-`PHI_V_MIX`, `PHI_L_MIX`, `VOL_L_MIX`, `VOL_V_MIX`, `CV_V_MIX`,
-`CV_L_MIX`, `MDS_V_MIX`, `MDS_L_MIX`, `Henry`。
-
-返回形态按属性语义判断：纯组分/逐组分属性返回活跃组分向量；常规 `_MIX` 属性返回
-单个混合物结果；`GAMMAS`、`PHI_L_MIX`、`PHI_V_MIX` 返回活跃组分向量；`Henry`
-仅保证返回当前亨利组分结果。矩阵输入在这些返回形态前增加 `case_count` 维。
+这两个表是对应定义的唯一权威来源。正文及其他 operation Skill 不再复制属性目录、
+属性单位、返回形态或公共常量数值；发现冲突时以表格为准。新增或修正接口时先核对源码
+注册与公开契约，再更新表格，不根据类名、文件名或编译模块内容推测可调用属性。
 
 ## 能量计算
 
@@ -258,19 +220,14 @@ def calculate_vapor_enthalpy_cases(self, t_cases, p_cases, y_cases):
 7. `GAMMAS`、`PHI_*_MIX` 等混合向量返回 `(case_count, active_component_count)`。
 8. 闪蒸 `flash_*` 是单工况迭代接口，不能接收这些矩阵。
 
-`Henry`、`DC`、`P`、`CP_INF`、`S_INF` 不作为本 Skill 的标准矩阵接口使用。
+`Henry`、`DC`、`CP_INF`、`S_INF` 不作为本 Skill 的标准矩阵接口使用。
 
 ## 体积与 P_MIX
 
-`P_MIX` 的历史调用以 `T/V/x` 反算压力。不同部署资料对 `VOL_*_MIX` 的摩尔体积
-标度存在不一致：有的业务按 m3/kmol 使用，而矩阵调用资料将部分体积结果记为 m3/mol，
-并要求乘 `1e3` 后作为数值等价的 L/mol 或 m3/kmol 输入。
-
-因此：
-
-1. 不把 `VOL_*_MIX` 的原始结果未经确认直接传给 `P_MIX`。
-2. 优先沿用目标版本中已有、经过数值验证的相邻调用和转换。
-3. 若没有目标版本证据，将体积单位标记为“未验证”并停止实现该路径，不猜转换因子。
+`VOL_L`、`VOL_V`、`VOL_L_MIX`、`VOL_V_MIX` 的公开返回单位为
+`m3/kmol`，数值上等于 `L/mol`。`P_MIX` 的 `V` 参数使用相同单位，因此这些
+体积结果可直接传入 `P_MIX`，业务层不得额外乘或除 `1e3`。具体参数与返回规则以
+[`references/property-catalog.md`](references/property-catalog.md) 为准。
 
 ## 错误处理
 
@@ -288,4 +245,4 @@ def calculate_vapor_enthalpy_cases(self, t_cases, p_cases, y_cases):
 - 不存在相没有被调用。
 - 标量和矩阵 shape 没有混用或隐式广播。
 - 输出字段、展示名和 `unitType` 没有与属性代码混淆。
-- 体积换算只使用目标版本已验证约定。
+- 体积与 `P_MIX.V` 均按权威属性表的 `m3/kmol` 契约传递。

@@ -41,21 +41,15 @@ description: Use when implementing a CSLAB domain/operation business unit Run() 
 两个规范模板都应通过继承 `Flash` 或项目已有 Flash-capable 基类取得算法，并保存注入的 Flow，
 不能在 `Run()` 内重新构造它们。
 
-## 常用 Flow 字段
+## 权威变量词汇表
 
-| 字段 | 含义 | 单位/坐标 |
-|---|---|---|
-| `T` | 温度 | K |
-| `P_in` | 计算压力 | Pa |
-| `P_out` | 下游压力约定 | Pa |
-| `F_mol` | 总摩尔流量 | kmol/s |
-| `XI_mol` | 对外流股组成 | 完整组分坐标 |
-| `FXI_mol` | 组分摩尔流量 | 完整组分坐标，kmol/s |
-| `FH` | 总焓流 | W |
-| `GasRat` | 气相摩尔分率 | 0 到 1 |
+执行 operation 业务开发前读取
+[`references/operation-variables.md`](references/operation-variables.md)。该表是流股、
+闪蒸、能量、组分坐标、端口、求解控制及常见模块族变量的唯一权威定义；其他 Skill
+只描述使用流程，不重复维护变量含义和单位。模板或经验证的同族契约可以覆盖默认端口名。
 
-闪蒸内部的 `XI_mol_in`、`LXI_mol`、`VXI_mol` 是活跃组分局部向量。写入下游
-Flow 前必须 `Comp_restore(values, Is0, Not0)`。
+闪蒸局部组成写入下游 Flow 前必须
+`Comp_restore(values, Is0, Not0)`，恢复到完整项目组分坐标。
 
 ## Run 五段式
 

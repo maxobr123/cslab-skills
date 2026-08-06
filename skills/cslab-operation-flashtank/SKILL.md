@@ -51,40 +51,12 @@ class MyTank(Utility_U, Vessel, ReactionBase):
    `Q`、`n_num_mol`、`FY_VXI_mol`、`KA_Cont`、`P_A_Ideal` 等,按模板而定)。
    未初始化的属性会导致落库比对与后续访问出错;**落库属性改名 = 字段丢失**。
 
-## 标准变量词汇表
+## 权威变量词汇表
 
-| 变量 | 含义 | 单位 |
-|---|---|---|
-| `self.T` / `self.T0` | 温度 / 初值 | K |
-| `self.P_in` / `self.P0` | 操作(进口)压力 / 初值 | Pa |
-| `self.P_out` | 出口压力 | Pa |
-| `self.VF` = `self.GasRat` / `self.VF0` | 汽化率 / 初值(业务层用 VF,基类字段是 GasRat,保持同步) | - |
-| `self.duty` / `self.duty0` | 热负荷 / 初值 | W |
-| `self.F_mol` | 总摩尔流量 | kmol/s |
-| `self.FL_mol` / `self.FV_mol` | 液/汽相摩尔流量 | kmol/s |
-| `self.XI_mol` / `self.XI0` | 进料摩尔分率(全组分坐标) | - |
-| `self.LXI_mol` / `self.VXI_mol` | 液/汽相摩尔分率 | - |
-| `self.K` / `self.K0` | 相平衡常数 / 初值 | - |
-| `self._Is0` / `self.Not0` | `Comp_filter` 返回的零/非零组分全局索引 | - |
-| `self.Flash_core` | 闪蒸返回的 `FlashResults` | - |
-| `self.A` | 相平衡非理想修正 | - |
-| `self.Data` / `self.comp` | 物性数据对象 / `self.Data.comp` | - |
-| `self.DT` / `self.DOA` / `self.K_time` | 步长 / 收敛精度 / 最大迭代 | - |
-| `self.mode` | 0 设计 / 1 校核 | - |
-| `self.T_init` / `self.P_init` / `self.duty_init` | 输入条件的原始记录(`get_value` 赋值,`P_init` 兼作"压力是否为输入"判据) | - |
-| `self.Pressure_drop` | 压降(`FFin.P_out - self.P_in`) | Pa |
-| `self.Density_mol` | 液相混合摩尔密度(`phy_prop` 的 `DS_L_MIX` 结果) | kmol/m3 |
-| `self.MW_avg` | 液相平均分子量(`sum(Data.MW[Not0] * LXI_mol)`) | kg/kmol |
-| `self.DutyIn` | 能量流对象(`.Duty`、`.T0`、`.T1`),未连接为 None | - |
-
-容器类(`Vessel`)另有:`Height` 罐高、`Diameter` 直径、`LHMP`/`LLMP` 高/低液位
-测点、`LRAT`/`PRAT`/`TRAT`、`HHL` 液位、`PW_out` 罐底压力(静液柱:
-`液相混合摩尔密度 * 平均分子量 * 9.81 * Height * 0.5 + P_in`)。
-
-`Data` 对象字段:`Data.comp`(`[{"cas","alias",...}]`)、`Data.CAS`、`Data.MW`
-(支持 `Data.MW[self.Not0]` 索引)、`Data.PUW` 公用工程字典、
-`Data.binaryData_all`(键=方法包 id)、`Data.methodBag[Method_bag]` 方法包配置、
-`Data.ReactionData`。缺省方法包 id:`list(Data.binaryData_all.keys())[0]`。
+变量含义、单位、组分坐标、Flow/FlashTank 端口、Vessel、Utility、ReactionBase 和
+`Data` 上下文字段统一读取
+[`cslab-operation-unit-skeleton/references/operation-variables.md`](../cslab-operation-unit-skeleton/references/operation-variables.md)。
+该表是唯一权威定义；本文只保留 FlashTank 家族的生命周期和使用规则。
 
 ## 继承方法词汇表
 
@@ -206,9 +178,8 @@ if self.DutyIn:
     self.DutyIn.T1 = self.T + 2.0 if self.duty > 0.0 else self.T - 2.0
 ```
 
-Flow 常用字段——读进口:`XI_mol`、`F_mol`、`FXI_mol`、`FLXI_mol`/`FVXI_mol`、
-`FL_vol`/`FV_vol`、`F_vol`、`FH`(焓流)、`P_out`(上游出口压力)、`T`;
-写出口:`F_mol`、`P_in`、`T`、`XI_mol`、`GasRat`。
+Flow 字段含义与单位使用权威变量词汇表；本族读写的具体字段以目标模板和上方
+`set_value()` 契约为准。
 
 `result` 键示例(格式契约见 `cslab-module-contract`):出口温度、出口压力、
 汽化率、热负荷、压降等,中文键 + `{"value", "unitType"}`。

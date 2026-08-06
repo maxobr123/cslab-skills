@@ -78,20 +78,11 @@ class MyOperation(Flash):
 
 ## 单位与坐标
 
-| 量 | 单位/约束 |
-|---|---|
-| `T` | K |
-| `P`、`P_in` | Pa |
-| `VF`、`GasRat` | 气相摩尔分率，0 到 1 |
-| `F_mol`、`FL_mol`、`FV_mol` | kmol/s |
-| `H_mol`、`HL_mol`、`HV_mol` | J/kmol |
-| `FH`、`FHL`、`FHV`、`FHin`、`target_duty` | J/s，即 W |
+变量含义、单位及局部/完整坐标规则以
+[`cslab-operation-unit-skeleton/references/operation-variables.md`](../cslab-operation-unit-skeleton/references/operation-variables.md)
+为唯一权威定义。本文只保留闪蒸使用流程。
 
-闪蒸始终区分两套组分坐标：
-
-- `ZI`、`K0`、`LXI_mol`、`VXI_mol` 是活跃组分局部向量。
-- `SkipIndex` 是被过滤组分在完整项目组分表中的全局索引。
-- 对外写入 Flow 的组成必须恢复为完整组分坐标。
+闪蒸始终使用活跃组分局部组成；对外写入 Flow 的组成必须恢复为完整项目组分坐标：
 
 ```python
 self.XI_mol_in, self.Is0, self.Not0 = Comp_filter(
