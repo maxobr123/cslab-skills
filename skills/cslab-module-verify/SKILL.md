@@ -7,6 +7,8 @@ description: Use when locally testing or debugging any CSLab algorithm module, i
 
 ## 环境硬约束(先读)
 
+- 先遵守 `cslab-module-develop` 的“开发文件边界”：本 Skill 的目标开发文件、源码验证
+  对象和算法交付物只能是 `.py`；`.pyd` 不能作为开发文件或源码完成证明。
 - 固定使用 **Python 3.7.6** 和项目锁定依赖。编译依赖必须与当前平台和解释器 ABI
   匹配：Windows 使用 `*.cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。
 - 开发部门通常在大量 `.pyd/.so` 依赖下工作，只修改自己负责范围内保留的 `.py`
@@ -26,6 +28,9 @@ description: Use when locally testing or debugging any CSLab algorithm module, i
 3. 使用 `python -B` 或 `PYTHONDONTWRITEBYTECODE=1` 防止生成 `.pyc` 验收产物；
 4. 正常导入后检查模块 `__file__` 指向本地 `X.py`；这只证明导入来源，不探测实现；
 5. 测试结束按开发者要求决定是否恢复原文件名，不擅自覆盖已有文件。
+
+临时改名只用于排除 Python 对同名二进制的导入优先级，不能计为算法修改，不能进入开发
+成果、交付文件或完成项。验收结论必须来自实际加载并执行的 `X.py`。
 
 Windows 项目根目录运行脚本时使用：
 
@@ -105,6 +110,7 @@ if __name__ == "__main__":
 8. 无 `print` 残留,无未定义变量分支(静态过一遍所有 if 分支)。
 9. 逐项验证开发者选择的模型、假设、初始条件、边界条件和验收标准；报告方程闭合误差。
 10. 源码的模块说明、方法注释、方程变量表和实际实现一致，不能保留已否决方案描述。
+11. 目标模块 `__file__` 明确指向 `.py`；已有同名 `.pyd` 能运行不能替代源码验收。
 
 不同模块族在以上通用项之上加载各自检查单；例如闪蒸模块检查相态与焓流，动态模块
 检查时间序列、状态连续性和守恒关系，不能把某一设备族的出口字段当作所有模块通用要求。
