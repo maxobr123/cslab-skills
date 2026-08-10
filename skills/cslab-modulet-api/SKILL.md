@@ -1,6 +1,6 @@
 ---
 name: cslab-modulet-api
-description: Use when querying or modifying CSLab module templates over HTTP - device type categories, template list, template detail (moduleProp/moduleNode), API-derived template variable catalog maintenance, pyTemp skeleton generation, template CRUD, and the template-to-algorithm mapping fields.
+description: Use when querying or modifying CSLab module templates over HTTP - device type categories, template list and detail, backend configuration and API verification of new module contract variables, API-derived variable catalog maintenance, pyTemp skeleton generation, template CRUD, and template-to-algorithm mapping fields.
 ---
 
 # moduleT 模板接口契约
@@ -134,6 +134,53 @@ scheduler 按 `importlib.import_module("domain." + 路径)` 加载,再 `getattr`
 (赋值多)生成 `{属性名}__formula` 注入,`74`(引用多)不生成。
 **is_input 不参与下发过滤**(输出属性也会被打进计算数据挂到实例上),
 方向语义靠约定维护。
+
+## 新增模块契约变量配置
+
+开发算法需要新增且当前模板详情、项目 Skill 和后台模板变量目录均未约定的模块契约
+变量时，必须先形成“待配置后台变量清单”，由开发人员确认并在后台完成配置。模块契约
+变量包括构造函数注入参数、模板输入/输出、需落库或前端展示的实例属性、可配置状态、
+初始条件、边界条件和连接节点；方法局部量、中间计算量、循环变量及私有缓存不属于
+后台配置范围。
+
+### moduleProp 配置建议字段
+
+| 字段 | 必须说明的内容 |
+|---|---|
+| `name` | Python 英文变量名，并说明与构造形参或实例属性的同名关系 |
+| `describe` / `desc` | 中文简称、完整业务含义与用途 |
+| `classify` / `classify2` | 数据类型及复合元素类型 |
+| `value` | 默认值及 SI 口径；没有合理默认值时明确要求后台补齐 |
+| `unitType` / `unit` / `opt_unit` | 物理量类型、存储单位和可选展示单位 |
+| 数据形状 | 标量、向量或矩阵，以及组分坐标和维度规则 |
+| 有效范围 | 最小值、最大值、枚举集合或其他约束 |
+| `is_input` | 输入或输出语义，以及构造注入或落库方式 |
+| 数据来源 | 开发人员输入、上游模块、状态量、方程求解或其他明确来源 |
+| 输出通道 | 是否写 `result`、同名实例属性或出口对象 |
+| 模板范围 | 目标 `t_module_pk`、模板名和设备族；禁止默认提升为公共变量 |
+| `source` / `relyOn` / `relyOn7` / `hide` | 枚举源、联动和显示条件；不适用时明确写无 |
+| 状态规则 | `cold_state`、`calculate_state_judgement` 及计算前后保存规则 |
+
+### moduleNode 配置建议字段
+
+除变量名、中文含义、模板范围外，节点清单还必须说明 `code`、`interface`、`phase`、
+是否允许未连接、对应的 Python 注入形参和上下游语义。不得只给出节点英文名。
+
+### 配置与 API 复核流程
+
+1. 先读取当前 `GET moduleT/?pk=<t_module_pk>`、项目 Skill 和后台变量目录，确认变量
+   确实未配置，避免重复创建或误改同名变量。
+2. 将上述完整配置建议纳入技术方案。开发人员必须先理解并确认技术方案，再决定自行
+   配置或明确授权 Agent 写入。权限授权本身不等于业务方案确认。
+3. Agent 代写时，必须已获得目标模板、完整 POST/PUT payload 和写权限的明确授权；
+   不得从变量名推测缺失字段，不得修改未授权模板。
+4. 配置完成后重新调用 `GET moduleT/?pk=<t_module_pk>`，逐字段核对名称、类型、单位、
+   默认值、方向、形状和节点契约。列表摘要、截图中的局部字段或写接口成功响应不能替代
+   详情 API 复核。
+5. 只有详情 API 复核通过后，才能将该变量加入“已确认后台属性/节点”目录并用于编码；
+   否则保留在当前方案的待配置清单，停止算法实现。
+
+禁止用 `**kwargs`、硬编码默认值、运行时临时属性或未登记节点绕过后台模板契约。
 
 ## 后台模板变量目录
 

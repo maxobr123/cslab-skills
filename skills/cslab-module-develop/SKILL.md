@@ -1,6 +1,6 @@
 ---
 name: cslab-module-develop
-description: Use as the mandatory entry-point workflow when developing, modifying, or debugging any CSLab engineering algorithm module, including operation, dynamic, control, design, chemical-principle, and property-method work. Requires template/contract discovery, online research, candidate design comparison, developer selection and assumption confirmation before implementation, followed by verification and delivery.
+description: Use as the mandatory entry-point workflow when developing, modifying, or debugging any CSLab engineering algorithm module, including operation, dynamic, control, design, chemical-principle, and property-method work. Requires template/contract discovery, backend configuration and API verification for new contract variables, online research, candidate design comparison, complete explanation, and explicit developer understanding and approval before implementation, followed by verification and delivery.
 ---
 
 # CSLab 工程算法开发工作流
@@ -99,6 +99,32 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 5. 对照后台模板变量目录核验变量含义；目录与本次 API 详情冲突时，以本次详情作为当前
    模板契约，并按模板范围更新目录，不能静默覆盖成全局定义。
 
+### 新增模块契约变量后台配置门禁
+
+开发中需要新增、且当前模板详情、项目 Skill 和后台模板变量目录均未约定的变量时，先
+判断它是否属于模块契约变量。以下内容属于模块契约，必须由开发人员在后台模板配置：
+
+- 构造函数注入参数、模板输入或输出、需要落库或在前端展示的实例属性；
+- 可配置状态、初始条件、边界条件；
+- `moduleNode` 连接节点。
+
+方法局部变量、中间计算量、循环变量和不对外暴露的私有缓存不要求后台配置，但仍须在
+方程变量表、方法注释或计算步骤中说明其含义、单位和来源。
+
+发现未约定的模块契约变量后，必须执行以下流程：
+
+1. 按 `cslab-modulet-api` 生成“待配置后台变量清单”，逐项说明变量名、类型、业务含义、
+   作用、单位、数据形状、输入/输出方向、默认值、有效范围、数据来源和模板范围；节点
+   还要说明节点类型、方向、相态、是否允许未连接及上下游语义。
+2. 把待配置清单纳入第5步的完整技术方案，提醒开发人员先完成后台配置。Agent 只有在
+   开发人员明确授权目标模板、完整请求载荷和写权限后，才可代为调用写接口。
+3. 配置完成后重新调用 `GET moduleT/?pk=<t_module_pk>`，核对变量名、类型、单位、
+   方向、默认值和节点字段。API 未返回或字段不一致时不得编码。
+4. API 复核通过后，按 `cslab-modulet-api` 更新后台模板变量目录，再进入实现。
+
+不得用 `**kwargs`、硬编码默认值、临时挂载实例属性或仅修改 `.py` 绕过后台模板配置。
+没有模板的底层算法不适用后台配置，但仍须从公开调用契约确认新增参数。
+
 ## 第3步：联网调研主要设计方案
 
 根据开发者提示词中的设备、过程、目标属性和工况关键词查询网络资料。优先级为：行业或
@@ -175,6 +201,35 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 
 开发者确认计算过程和方程表后，才进入实现。
 
+## 第5.1步：技术方案理解与最终实施确认（编码门禁）
+
+在修改任何算法 `.py` 前，必须向开发人员完整展示并解释当前技术方案。至少包括：
+
+1. 开发目标、系统边界、覆盖范围和不覆盖范围；
+2. 调研来源、全部候选方案、对比结果、推荐方案及推荐理由；
+3. 全部模型假设、主入口及各方法的计算顺序；
+4. 衡算对象、主要方程，以及每个变量的含义、单位、维度、符号和数据来源；
+5. 输入、状态、输出和 `result`、同名实例属性、出口对象三个平台输出通道；
+6. 数值方法、初值、步长、容差、收敛条件、边界处理和失败策略；
+7. 待配置后台变量、拟修改的 `.py`、测试与验收方式、风险、限制和性能影响。
+
+展示后必须明确询问开发人员是否完全理解并确定采用该技术方案，并提示不明白的部分
+可以继续询问。`request_user_input` 可用时使用以下三个互斥选项：
+
+1. `有不明白，需要继续解释`；
+2. `完全理解并同意实施`；
+3. `不同意，需要调整方案`。
+
+开发人员选择继续解释时，针对疑问答复；答疑完成后重新展示完整的当前方案并再次确认，
+不能只展示差异。选择调整方案时回到第3至5步；方案、假设、方程、接口或数值方法发生
+实质变化后，旧确认自动失效。只有开发人员明确表达“完全理解并同意实施”或语义完全
+等价的确认，才可记录带版本的“已确认设计”并进入第6步。
+
+沉默、未反对、超时、推荐项、默认项以及“大概可以”“先试试”等模糊表达均不构成确认。
+不得用权限授权框代替技术方案确认；原生选择不可用时使用等价编号列表并停止等待回复。
+最终确认前不得创建或修改算法 `.py`。技术方案确认和新增模块契约变量的 API 复核是
+两道独立门禁；存在新变量时，两者都通过后才允许实施。
+
 ## 第6步：编写算法
 
 1. 起点可用平台骨架:`GET moduleT/pyTemp?pk=<id>&class_name=<类名>`。
@@ -191,6 +246,8 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 4. 全程遵守通用契约与族包的禁止事项（不反编译 `.pyd/.so`、不混用组分坐标系、
    不把多工况数组传给 `flash_*`)。
 5. 只实现已确认方案；新增推测或改变假设时立即停止并重新走第4、5步。
+6. 实现中发现未约定的模块契约变量时立即停止，回到“新增模块契约变量后台配置门禁”；
+   API 复核和重新确认完成前，不得用代码兼容手段临时接入。
 
 ## 第7步：本地验证
 
@@ -228,7 +285,10 @@ Windows 使用 `cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。缺
 5. 未连接节点注入 `None`,访问前判空。
 6. 接口取不到的信息先查对应 Skill，再查自己负责范围内源码或直接问开发者；不得通过
    读取、反编译、反射或试探 `.pyd/.so` 补全契约，也不得编造。
-7. 未完成网络调研、方案选择、假设确认和计算设计说明前，不得进入正式编码。
+7. 未完成网络调研、方案选择、假设确认、完整计算设计说明和开发人员最终明确同意前，
+   不得创建或修改算法 `.py`。
 8. 不把某个设备的专用方程写成所有模块共享的通用规则。
 9. 不得因选择控件限制删减候选方案、替开发者筛选或以推荐项、超时、默认值自动确认；
    原生列表不可用时必须使用等价编号列表并等待明确回复。
+10. 未约定的模块契约变量必须先完成后台配置和 API 复核；不得用 `**kwargs`、硬编码
+    默认值或临时实例属性绕过模板契约。
