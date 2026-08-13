@@ -23,13 +23,29 @@ description: Use when designing, implementing, modifying, or debugging any CSLab
 2. 按执行顺序运行模块；
 3. 对每个模块无参调用模板 `startFun`；
 4. 若 `startFun != "DRun"` 且实例存在 `DRun`，追加调用
-   `DRun(begin_time=<本步起始时间>, dt=<step_second>)`；
+   `DRun(begin_time=<本步起始时间>, dt=<step_second>)`；这里的 `dt` 只是现有调度器的兼容
+   形参，不是动态算法的有效步长来源；
 5. 模块循环结束后运行管网求解；
 6. 执行 `begin_time += step_second`，进入下一步。
 
 因此常见模板 `startFun="Run"` 的实际顺序是 `Run()` → `DRun(begin_time, dt)` → 管网。
 若模板直接配置 `startFun="DRun"`，基础控制器会无参调用一次 `DRun()`，不会追加第二次；
-此时 `DRun` 的参数必须有默认值，并且模块仍需自行完成所选方案要求的边界发布。
+此时 `DRun` 的参数必须有默认值，并且模块仍需自行完成所选方案要求的边界发布。无论
+调度器采用哪种调用形式，动态算法每步都必须执行 `dt = self.Data.PGV["DT"]` 获取有效
+步长，不得使用调用方传入的 `dt` 决定状态推进量。
+
+## 动态步长来源
+
+1. `self.Data.PGV["DT"]` 是 `domain/dynamic/` 算法获取动态步长的统一入口。每次推进状态
+   前读取当前值，不把构造时缓存值视为永久步长。
+2. 动态步长不是构造函数、模板 `moduleProp`、`Run` 或 `DRun` 的外部业务传参；不得为此
+   新增 `dt` 模板属性、后台变量或构造形参。
+3. 若现有调度器为兼容历史签名向 `DRun` 传入 `dt`，可以保留兼容形参，但算法不得读取
+   该值作为有效步长，必须以 `self.Data.PGV["DT"]` 覆盖或忽略它。
+4. 开发和测试时通过测试工程的 `Data.PGV["DT"]` 配置步长；禁止直接调用
+   `DRun(dt=<测试值>)` 改变算法步长并据此宣称验证通过。
+5. `Data`、`PGV` 或 `DT` 缺失，以及 `DT` 不是有限正数时，通过 `feedback` 返回包含字段
+   路径和实际值的受控错误，不静默采用硬编码默认值。
 
 ## 构造和状态初始化
 
@@ -47,7 +63,8 @@ description: Use when designing, implementing, modifying, or debugging any CSLab
 1. `Run`、`DRun` 及辅助方法逐步计算顺序；
 2. 每个动态状态的初值、导数、边界和回写位置；
 3. 温度、压力、组成、流量等关键量是固定输入、上游继承、代数方程结果还是动态状态；
-4. 调度步长与积分步长的关系，采用显式/隐式/自适应等哪种方法；
+4. `self.Data.PGV["DT"]` 的项目配置值、单位及其与内部积分子步的关系，采用显式/隐式/
+   自适应等哪种方法；
 5. 管网或下游模块使用本步还是下一步边界，是否存在一拍延迟；
 6. 空设备、满设备、上下限、相态切换、不收敛和断开节点如何处理。
 
@@ -60,7 +77,8 @@ description: Use when designing, implementing, modifying, or debugging any CSLab
 具体职责由已选方案决定，但必须显式划分：
 
 - `Run()`：完成当前时刻的代数计算、状态准备、边界发布和模板 `startFun` 返回通道；
-- `DRun(begin_time, dt)`：按已选方法推进动态状态，并同步模板属性和下一次管网所需边界。
+- `DRun(...)`：从 `self.Data.PGV["DT"]` 读取有效步长，按已选方法推进动态状态，并同步
+  模板属性和下一次管网所需边界；调度器传入的同名兼容参数不得参与计算。
 
 当 `Run` 是 `startFun` 时，控制器最终返回的是 `Run()` 的结果；追加 `DRun()` 的返回值不会
 替换它。`DRun` 更新后的实时状态必须写入同名实例属性和出口节点，不能只放在返回字典。
@@ -69,7 +87,8 @@ description: Use when designing, implementing, modifying, or debugging any CSLab
 
 ## 数值和边界要求
 
-1. 校验 `dt` 为有限正数，记录单位；不得默认为与物理模型无关的任意步长。
+1. 每步读取并校验 `self.Data.PGV["DT"]` 为有限正数，记录单位；不得读取外部 `dt` 参数，
+   也不得回退为与项目配置无关的硬编码步长。
 2. 状态更新必须符合开发者选择的守恒方程和数值方法；不要用截断、`nan_to_num(0)` 或
    静默回退掩盖模型失败。
 3. 上下限、溢流、停机、报警或状态投影属于模型选择，开发者确认后才能实现。
@@ -82,8 +101,8 @@ description: Use when designing, implementing, modifying, or debugging any CSLab
 避免前端、落库和下游看到不同时刻的数据。
 
 Dynamic V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，不要依赖 `print` 调试。
-临时观测使用项目 logger 或在重定向范围外采集，至少记录 `begin_time/dt`、关键状态、方程
-流入项、流出项和残差；验证成功后删除临时代码。
+临时观测使用项目 logger 或在重定向范围外采集，至少记录 `begin_time`、
+`self.Data.PGV["DT"]`、关键状态、方程流入项、流出项和残差；验证成功后删除临时代码。
 
 ## 源码整图验证
 
@@ -91,8 +110,9 @@ Dynamic V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，�
 2. 使用 `python -B` 直接加载目标 `.py`，确认 `module.__file__` 指向本地源码。
 3. 从服务器获取项目画布和数据，但在本地运行 `chemicalLib/moduleRunBase.py`；网页运行结果
    不能证明本地源码正确。
-4. 连续记录多个时间步，验证状态确实变化、方向符合所选模型、守恒残差满足容差、边界被
-   下游采用，并覆盖静止、正常变化和边界工况。
+4. 核对测试工程 `Data.PGV["DT"]` 的实际值，连续记录多个时间步，验证状态确实按该步长
+   变化、方向符合所选模型、守恒残差满足容差、边界被下游采用，并覆盖静止、正常变化和
+   边界工况。
 5. 动态进程受控停止，只清理本次启动的 PID；删除临时观测代码后再做最终回归。
 
 ## 禁止事项
@@ -102,3 +122,5 @@ Dynamic V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，�
 3. 在 `__init__` 读取构造后才挂载的模板属性。
 4. 把逐步调用旧稳态算法包装成动态模型，却没有明确状态方程和时间推进方法。
 5. 只更新内部状态，不同步模板属性和出口节点。
+6. 把动态步长作为外部业务参数传入，或使用 `DRun` 的 `dt` 兼容形参代替
+   `self.Data.PGV["DT"]`。
