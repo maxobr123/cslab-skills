@@ -61,6 +61,13 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 4. 性能、精度、稳定性、兼容性及禁止修改范围。
 5. 本次实际测试位置、数据来源、执行对象、输入工况、参考结果和通过标准。
 
+建立变量事实表时，读取
+[`cslab-operation-unit-skeleton/references/operation-variables.md`](../cslab-operation-unit-skeleton/references/operation-variables.md)
+中的权威变量词汇、Flow 继承规则和项目开发文档候选命名。该表适用于 operation、
+dynamic、control、design、chemical-principle 等 Flow 语义扩展模块；其中专用族字段仍按
+适用范围限制。当前模板详情 API 可覆盖规范候选名；文章或词汇表中的名称不能单独证明
+后台已经配置对应属性或节点。
+
 把信息分为“已确认事实 / 待开发者确认 / 暂定推测”。提示词已明确的内容直接记录为
 确认项，不重复提问；会改变物理模型或接口的缺口必须在编码前确认。
 
