@@ -1,6 +1,6 @@
 ---
 name: cslab-module-develop
-description: Use as the mandatory entry-point workflow when developing, modifying, or debugging any CSLab engineering algorithm module, including operation, dynamic, control, design, chemical-principle, and property-method work. Requires template/contract discovery, backend configuration and API verification for new contract variables, online research, candidate design comparison, complete explanation, and explicit developer understanding and approval before implementation, followed by verification and delivery.
+description: Use as the mandatory entry-point workflow when developing, modifying, or debugging any CSLab engineering algorithm module, including operation, dynamic, control, design, chemical-principle, and property-method work. Requires an explicit test contract, developer-provided source collection before online research, template/contract discovery, backend verification for new variables, candidate comparison, complete explanation, and explicit developer approval before implementation, followed by verification and delivery.
 ---
 
 # CSLab 工程算法开发工作流
@@ -59,9 +59,41 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 2. 输入、输出、端口、状态变量、初始条件、边界条件、单位和验收标准。
 3. 哪些结果需要进入 `result`、同名模板属性和出口节点。
 4. 性能、精度、稳定性、兼容性及禁止修改范围。
+5. 本次实际测试位置、数据来源、执行对象、输入工况、参考结果和通过标准。
 
 把信息分为“已确认事实 / 待开发者确认 / 暂定推测”。提示词已明确的内容直接记录为
 确认项，不重复提问；会改变物理模型或接口的缺口必须在编码前确认。
+
+### 建立测试契约
+
+开发前必须知道本次代码在哪里、以什么数据和入口验证，不得写完代码后再临时决定测试
+方式。形成测试契约表，至少记录：
+
+| 项目 | 必须确认的内容 |
+|---|---|
+| 测试类型 | 单独物性、单模块、完整本地工程或其他 |
+| 实际测试文件 | 开发者指定，或在当前项目中检索并核实的真实路径 |
+| 数据工程 | CSLab 取数和项目计算使用的 `pro` 工程号 |
+| 方法包 | 单独物性计算使用的 `Method_bag` |
+| 执行对象 | `Flash`、具体物性对象、模块类或项目计算控制器 |
+| 输入工况 | 属性名、温度、压力、组成、流量、时间步及其他必要输入 |
+| 验收标准 | 参考值、误差、衡算闭合、动态变化、输出通道或其他明确标准 |
+| 环境依赖 | 服务地址、Python 3.7.6、必要的兼容二进制依赖 |
+| 源码确认 | 验收时实际加载路径必须指向本次开发的 `.py` |
+
+单独计算物性时，在当前项目选择或新建本次实际测试脚本：使用 `pro + Method_bag` 请求
+`chemicalData`，调用 `instantiation_data(...)` 构造 `Data`，再按目标属性实例化
+`Flash`、`MethodLV` 或其他合适的公开对象并调用统一物性接口。Skill 只约定这种取数、
+实例化和调用形式，不约定测试脚本的目录或文件名；脚本路径、属性参数、标量/矩阵语义
+和误差标准必须针对当前开发任务确认。
+
+完整本地工程计算使用当前项目实际提供的工程运行入口。先使用开发者指定入口；未指定
+时在当前项目检索候选运行文件，读取其项目计算控制器、数据加载和启动方式后，与开发者
+确认真实路径。Skill 不约定该入口的目录或文件名。确认 `pro`、稳态/动态/设计/化原等
+计算模式，以及实际入口要求的 `pk`、`special_pk`、服务器地址等参数。
+
+缺少必要的 `pro`、物性计算所需 `Method_bag`、实际测试入口或验收标准时，向开发者
+询问并保持为待确认项；不得擅自复用历史示例中的编号或把示例文件当作本次测试契约。
 
 ## 第2步：定位模板和运行契约
 
@@ -125,7 +157,18 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 不得用 `**kwargs`、硬编码默认值、临时挂载实例属性或仅修改 `.py` 绕过后台模板配置。
 没有模板的底层算法不适用后台配置，但仍须从公开调用契约确认新增参数。
 
-## 第3步：联网调研主要设计方案
+## 第3步：收集开发者资料并联网调研
+
+开发者尚未在提示词中提供资料时，联网查询前先询问是否可以提供本模块的技术资料，
+包括 PDF、网页地址、国家或行业标准、论文、教材、设计手册、设备说明书、工艺包、
+已确认公式、流程图、测试数据和
+参考结果。开发者可以直接提供文件或链接；同时提示开发者，不确定资料是否有用也可以
+先提供，由 Agent 分析。
+
+开发者提供资料时，先提取其适用对象、工况、方程、变量、单位、假设、限制和验证数据，
+再以网络资料补充或交叉验证。开发者明确表示没有资料时，记录“暂无指定技术资料”后
+继续联网调研。尚未回答时不得跳过该询问门禁。开发者资料与网络资料存在口径冲突时，
+完整展示差异并由开发者确认，不得自行拼接或覆盖。
 
 根据开发者提示词中的设备、过程、目标属性和工况关键词查询网络资料。优先级为：行业或
 国家标准、权威教材、同行评议论文、官方技术文档、可靠工程资料。不得使用目标 `.pyd/.so`

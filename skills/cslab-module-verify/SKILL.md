@@ -1,6 +1,6 @@
 ---
 name: cslab-module-verify
-description: Use when locally testing or debugging any CSLab algorithm module, including single-module tests, direct Python source loading, dynamic/full-flow execution through chemicalLib/moduleRunBase.py, obtainData fetching, verification checklists, process cleanup, and deployment notes.
+description: Use when locally testing or debugging any CSLab algorithm module, including test-entry discovery, property tests built from pro and Method_bag data, single-module tests, direct Python source loading, project full-flow execution, obtainData fetching, verification checklists, process cleanup, and deployment notes.
 ---
 
 # CSLab 算法模块本地验证
@@ -39,6 +39,24 @@ $env:PYTHONPATH='.'
 uv run python -B <脚本路径>
 ```
 
+## 测试入口与物性测试形式
+
+测试文件路径不是平台固定契约。先使用开发者指定的实际入口；未指定时在当前项目中检索
+候选测试脚本或工程运行文件，读取其数据加载、计算控制器和启动方式，再与开发者确认。
+不得假定其他开发者仓库存在某个示例目录、文件名或脚本。
+
+单独物性验证时，在当前项目选择或新建实际测试脚本，按以下形式执行：
+
+1. 使用开发者提供的 `pro` 和 `Method_bag` 请求 `chemicalData`。
+2. 调用 `instantiation_data(...)` 构造 `Data`。
+3. 按目标属性实例化 `Flash`、`MethodLV` 或其他公开且合适的物性对象。
+4. 调用统一的标量或矩阵物性接口，并传入该属性要求的温度、压力、组成等参数。
+5. 按已确认的参考值、标量对比、误差阈值或物理约束验收。
+
+完整本地工程验证使用当前项目实际存在的工程运行入口。该入口应以 `pro` 加载项目数据并
+实例化相应的稳态、动态、设计、化原或特殊计算控制器；按实际签名补充 `pk`、
+`special_pk`、服务器地址等参数。Skill 只约定这种执行形式，不约定入口目录和文件名。
+
 ## 取数接口
 
 - `POST ${CSLAB_SERVER_HOST}/cslab-server/obtainData/chemicalData/`
@@ -64,10 +82,20 @@ if __name__ == "__main__":
     import json, time
 
     pro = "<测试项目id>"
+    Method_bag = "<开发者确认的方法包id>"
     chemical_data = json.loads(
-        RequestsServer().post_request({"pro": pro}, "chemicalData")["data"])
+        RequestsServer().post_request(
+            {
+                "pro": pro,
+                "rely_cal_data_type": {
+                    "relyState": "RelyAll",
+                    "relyDataType": [],
+                    "方法包": [Method_bag],
+                },
+            },
+            "chemicalData",
+        )["data"])
     Data: compl_init = instantiation_data(**chemical_data)
-    Method_bag = list(Data.binaryData_all.keys())[0]
     print("组分:", {i["cas"]: i["alias"] for i in Data.comp})
 
     fin = Flow(Data=Data, Method_bag=Method_bag)
@@ -118,16 +146,16 @@ if __name__ == "__main__":
 ## 本地整图与动态联调
 
 服务器网页只负责画布、模板实例值和物性数据；本地测试由本机 Python 进程加载本地
-`chemicalLib/` 与 `domain/` 文件。不得把网页服务器运行结果当作本地源码验收结果。
+调度库与 `domain/` 文件。不得把网页服务器运行结果当作本地源码验收结果。
 
-当前项目可在根目录直接运行：
+使用测试契约中已经确认的实际工程运行文件，例如：
 
 ```powershell
 $env:PYTHONPATH='.'
-uv run python -B chemicalLib/moduleRunBase.py
+uv run python -B <实际工程运行文件>
 ```
 
-运行前在 `moduleRunBase.py` 核对 `host/pro/callow_way/pk`。动态 `run()` 会持续等待退出
+运行前按实际入口核对 `host/pro/callow_way/pk/special_pk` 等参数。动态 `run()` 会持续等待退出
 信号，测试必须记录本次启动的 PID，采用受控停止，并只清理本次进程。工具调用被中断后
 立即检查残留 `uv/python` 进程，不影响其他项目服务。
 
