@@ -105,10 +105,11 @@ scheduler 按 `importlib.import_module("domain." + 路径)` 加载,再 `getattr`
 `callow_item`，并按运行入口补充 `canvas/pk/special_pk/is_custom_sequence/`
 `is_only_checked/need_converge`。
 
-项目数据只来自服务器，本地 `chemicalLib/moduleRunBase.py` 仍通过模板槽位导入本地
-`domain/.../*.py` 或依赖二进制。网页服务器上的算法文件不会自动替代本地文件，也不能
-用网页运行结果证明本地源码已加载。`CalculateData` 缺少的 `is_input` 等模板语义仍以
-`moduleT` 详情为准，不根据实例值猜测输入/输出方向。
+项目数据只来自服务器，本地工程运行入口仍通过模板槽位导入本地 `domain/.../*.py` 或
+依赖二进制。入口路径不是平台固定契约，先在当前项目检索并确认，不能假定存在某个
+`moduleRunBase.py`。网页服务器上的算法文件不会自动替代本地文件，也不能用网页运行结果
+证明本地源码已加载。`CalculateData` 缺少的 `is_input` 等模板语义仍以 `moduleT` 详情为准，
+不根据实例值猜测输入/输出方向。
 
 ### moduleProp(参数属性)
 
@@ -156,7 +157,7 @@ scheduler 按 `importlib.import_module("domain." + 路径)` 加载,再 `getattr`
 | 有效范围 | 最小值、最大值、枚举集合或其他约束 |
 | `is_input` | 输入或输出语义，以及构造注入或落库方式 |
 | 数据来源 | 开发人员输入、上游模块、状态量、方程求解或其他明确来源 |
-| 输出通道 | 是否写 `result`、同名实例属性或出口对象 |
+| 输出消费者 | 入口返回、`result`、同名实例属性、出口对象或其他调用方；没有消费者的通道标记不适用 |
 | 模板范围 | 目标 `t_module_pk`、模板名和设备族；禁止默认提升为公共变量 |
 | `source` / `relyOn` / `relyOn7` / `hide` | 枚举源、联动和显示条件；不适用时明确写无 |
 | 状态规则 | `cold_state`、`calculate_state_judgement` 及计算前后保存规则 |

@@ -1,6 +1,6 @@
 ---
 name: cslab-module-contract
-description: Use when writing any CSLab algorithm module regardless of family (steady operation, dynamic, control, design). Defines the platform-generic runtime contract - constructor injection, startFun, Run return convention, the three output channels, and feedback.
+description: Use when writing any CSLab algorithm module regardless of family (steady operation, dynamic, control, design). Defines constructor injection, startFun, consumer-driven return and output contracts, feedback, Chinese source documentation, and minimal implementation requirements.
 ---
 
 # 模块运行契约(平台通用,L2)
@@ -43,8 +43,9 @@ description: Use when writing any CSLab algorithm module regardless of family (s
    适用范围、核心物理/数学方程、主要求解或离散方法、调度入口及时序、关键单位与假设。
    动态模块必须明确列出状态微分方程及采用的积分方法，不能只写“动态计算模块”。
 3. 每个方法都必须有中文 docstring，包括 `__init__`、私有辅助方法、`staticmethod`、
-   `classmethod` 和 `property`。docstring 应按实际情况说明：方法目的、参数及单位、返回值、
-   会修改的实例状态、异常/失败行为和主要执行步骤。
+   `classmethod` 和 `property`。docstring 必须按实际情况完整说明：方法目的；每个参数的
+   含义、类型、单位、形状和数据来源；返回值；会修改的实例状态或出口对象；异常/失败
+   行为；主要执行步骤。业务方法不得只用一句“计算某值”代替完整说明。
 4. 复杂热路径或动态积分方法除 docstring 外，继续使用项目规定的步骤式中文注释分段；
    注释解释物理口径、索引语义、状态变更和回退原因，不逐行复述显而易见的代码。
 5. 每条主要方程必须标明方程类型和衡算对象，并逐一解释变量的物理意义、单位、维度、
@@ -53,6 +54,36 @@ description: Use when writing any CSLab algorithm module regardless of family (s
    推测写成既定事实。外部模型或关联式需在模块说明中记录可追溯资料来源。
 7. 主入口方法的 docstring 必须按实际顺序说明计算过程，明确温度、压力、组成、流量等
    关键状态是输入值、固定值、继承值还是方程求解结果。
+
+注释以“信息完整”为目标，不以篇幅为目标。简单且无参数、无返回值、无副作用的方法可
+简短说明；复杂方法才增加步骤式行内注释。不要逐行复述赋值、循环和条件判断。交付前按
+方法逐个核对 docstring 与实际签名、单位、状态修改和异常路径一致，不能只检查是否存在
+三引号。
+
+## 最小必要实现(强制)
+
+编码前后都要为新增或保留的代码建立“用途与消费者”检查。每个方法、参数、内部状态、
+缓存、返回值和结果字段至少对应以下一项：
+
+1. 当前模板、调度器或公开调用契约；
+2. 开发者已确认的物理方程、数值方法或边界处理；
+3. 已核实的前端、落库、下游节点或调用方消费者；
+4. 明确的异常隔离、复用、性能或独立测试价值。
+
+不能对应任何一项时删除或内联，不得以“以后可能用到”为由保留。只包装一个显而易见
+表达式、没有复用和独立失败语义的辅助方法通常应内联；未读取的私有状态、未使用的普通
+参数和重复同步必须删除。模板同名注入参数、入口兼容形参和框架反射入口即使算法体内
+不读取，也属于契约代码，不能擅自删除；必须在 docstring 中说明其消费者和保留原因。
+
+交付前使用 [`scripts/audit_module_source.py`](scripts/audit_module_source.py) 做静态预检：
+
+```powershell
+uv run python .opencode/skills/skills/cslab-module-contract/scripts/audit_module_source.py `
+  --family generic <目标.py>
+```
+
+脚本只能发现可确定的语法、文档、调试残留和明显无消费者问题；模板反射、外部调用、物理
+必要性和注释语义仍须人工核对。静态警告不能直接作为删除代码的唯一依据。
 
 ## startFun 契约
 
@@ -66,13 +97,16 @@ description: Use when writing any CSLab algorithm module regardless of family (s
 
 ## 入口方法返回约定
 
-返回二元组 `(计算状态, 结果字典)`:
+先读取实际控制器和所属族 Skill，确认入口返回值是否有消费者，再决定返回形式。平台基础
+控制器可接收二元组，也会把非二元组结果按成功处理；这不代表所有模块都必须构造结果。
 
-- 成功:`return True, self.result`
-- 失败:`return False, {}`(或模块定义的 `result_fail`,结构同 `result`、
-  数值填零,用于空进料/不收敛)
+- 已核实控制器消费计算状态和前端结果时，使用 `(计算状态, 结果字典)`；常见稳态成功
+  返回 `True, self.result`，失败返回 `False, {}` 或已确认的 `result_fail`。
+- 控制器不消费入口业务结果时，成功路径不构造 `result`，也不为了统一外观返回空字典。
+  错误传播方式按所属族的控制器契约执行。
+- 控制器版本、`startFun` 或包装器改变时重新核实，不把某一族的返回约定提升为全局规则。
 
-`result` 为 `@property`,格式固定:
+需要 `result` 时才定义对应属性，格式为：
 
 ```python
 {"result": {
@@ -81,33 +115,44 @@ description: Use when writing any CSLab algorithm module regardless of family (s
 }}
 ```
 
-外层必须是 `{"result": {...}}`;键为面向用户的中文名;已知 `unitType` 枚举:
+需要该通道时外层必须是 `{"result": {...}}`;键为面向用户的中文名;已知 `unitType` 枚举:
 `Temperature`、`Pressure`、`Enthalpy flow`、`Mole flow`、`Mole enthalpy`。
 
-## 三条输出通道(相互独立,缺一不可)
+## 输出消费者矩阵
 
-| 通道 | 机制 | 漏掉的后果 |
+三种通道相互独立，但不是所有模块都必须同时实现。只实现当前模板、控制器和上下游实际
+消费的通道；在技术方案中记录每个输出的消费者和验证方式。
+
+| 通道 | 何时必须实现 | 机制 |
 |---|---|---|
-| `result` 字典 | 随返回值推送前端展示 | 用户界面看不到结果 |
-| 同名实例属性 | 模板中输出属性(`is_input=否`),在入口方法里给**同名**实例属性赋值;框架计算后逐属性比对变更、按属性 id 回写数据库(仅回写:整数/浮点/字符串、种类为"普通"的列表、种类为"系数"的组分数组) | 结果不落库 |
-| 写出口节点 | 把出口状态写回出口流股/能量流对象的字段 | 下游模块拿不到结果 |
+| `result` 字典 | 已核实入口返回值被前端结果消费者读取 | 随入口返回值推送面向用户的结果 |
+| 同名实例属性 | 模板输出属性需要实时展示、落库或被引用 | 在入口或动态推进后给同名实例属性赋值；框架按属性 id 处理支持的类型 |
+| 出口节点 | 管网或下游模块需要该边界 | 把已确认字段写回出口流股、能量流或其他节点对象 |
+
+不得为没有消费者的通道构造占位数据，也不得因为某通道不适用而漏掉其他真实消费者。
+动态 V1 的具体返回与实时推送规则以 `cslab-dynamic-module` 为准；稳态 operation 的结果
+规则以对应族 Skill 为准。
 
 ## feedback 契约
 
 - 签名 `self.feedback(label, msg, code=None)`;`label ∈ {"error","warn"}`,
-  msg 中文;`error` = 无法继续,调用后走失败返回;`warn` = 提示不中断。
+  msg 中文；`error` 表示无法继续，随后按所属控制器可识别的失败返回或异常传播结束；
+  `warn` 表示提示但不中断。
 - 错误码 5 位:首 1-2 位为模块/领域段,后位为序号,同模块内同段递增。
   **错误码属平台约定,不得自造**:新告警没有对应码时先与开发者确认,
   或暂不带 `code` 只传文案。
-- `feedback` 由调度框架在实例化后**动态注入**,模块不定义它。模块文件顶部放
+- `feedback` 由调度框架在实例化后**动态注入**,模块不定义它。需要直接本地实例化时，
+  可在测试代码或模块文件顶部放
   空桩 `def feedback_func(*args, **kwargs): pass`,本地测试时手动
   `instance.feedback = feedback_func`;类内直接调用 `self.feedback(...)`。
-- 不用 `print` 上报信息,不用裸 `raise` 替代 feedback。
+- 不用 `print` 上报信息。不可继续的错误先调用 `feedback`，再按所属族控制器能够识别的
+  失败返回或异常传播方式结束；不得仅返回一个控制器会忽略的失败状态。
 
 ## 通用禁止事项
 
 1. 形参名/入口方法名与模板不一致(注入与调用是纯名字匹配,错了不报错)。
 2. 在模块内做单位换算或接收非 SI 输入。
-3. 输出通道缺失(算对了但前端/库/下游拿不到)。
+3. 未核实消费者就机械生成 `result`，或漏掉已经确认的实例属性、出口节点消费者。
 4. 未连接节点(`None`)不判空就访问。
 5. 不依赖编译模块源码存在；不读取、修改、探测或反编译 `.pyd/.so`。
+6. 保留没有契约、物理、消费者、异常隔离、复用或测试价值的代码。

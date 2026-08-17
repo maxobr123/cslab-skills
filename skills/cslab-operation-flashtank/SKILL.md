@@ -165,7 +165,7 @@ def getReaction(self):
 
 ## 出口流股回写与 Flow 契约
 
-`set_value()` 把结果写到出口 Flow(通用契约的第三条输出通道在本族的落地),
+`set_value()` 把结果写到出口 Flow（本族已确认的下游节点消费者），
 连接能量流时还要**反向回写换热端温度**:
 
 ```python

@@ -1,19 +1,27 @@
 ---
 name: cslab-dynamic-module
-description: Use when designing, implementing, modifying, or debugging any CSLab domain/dynamic algorithm module. Defines the verified DynamicCalculateControlV1 lifecycle, Run plus DRun scheduling, lazy state initialization, boundary publication, dynamic result behavior, diagnostics, and source-only full-flow verification without prescribing device-specific equations.
+description: Use when designing, implementing, modifying, or debugging CSLab domain/dynamic modules. Defines the verified DynamicCalculateControlV1 lifecycle, Run plus DRun scheduling, PGV DT ownership, lazy state initialization, consumer-driven outputs, diagnostics, minimal implementation, and source-only full-flow verification; other controller versions require separate runtime discovery.
 ---
 
 # CSLab 动态模块通用契约(L3)
 
 本 Skill 只定义 `domain/dynamic/` 模块共享的调度和状态生命周期。具体设备方程、经验模型、
-数值积分方法和模型假设必须先按 `cslab-module-develop` 联网调研、展示候选方案并由开发者
-确认；不要把某个水罐、反应器或管道的模型当作动态族通用公式。
+数值积分方法和模型假设按 `cslab-module-develop` 的风险分级执行；改变计算结果时完成资料
+收集、调研、候选比较和开发者确认，纯注释或已证明行为不变的清理不重复做物理模型选择。
+不要把某个水罐、反应器或管道的模型当作动态族通用公式。
 
 同时加载：
 
 - `cslab-module-develop`：需求、调研、选择和设计门禁；
 - `cslab-module-contract`：构造注入、输出通道、feedback 和中文文档规范；
 - `cslab-module-verify`：目标源码直载和整图动态验证。
+
+## 先确认动态控制器
+
+先从当前工程运行入口和控制器映射确认实际版本。本 Skill 下述返回和调度细节只对已验证的
+`DynamicCalculateControlV1` 生效。若实际使用 Dynamic V3、V4 或其他控制器，先读取对应
+运行源码，记录 `startFun`、追加生命周期调用、返回值消费者、实时推送和错误处理，再向
+开发者展示差异；不得直接套用 V1。
 
 ## Dynamic V1 调度生命周期
 
@@ -76,14 +84,18 @@ description: Use when designing, implementing, modifying, or debugging any CSLab
 
 具体职责由已选方案决定，但必须显式划分：
 
-- `Run()`：完成当前时刻的代数计算、状态准备、边界发布和模板 `startFun` 返回通道；
+- `Run()`：完成当前时刻的代数计算、状态准备和已确认的边界发布；
 - `DRun(...)`：从 `self.Data.PGV["DT"]` 读取有效步长，按已选方法推进动态状态，并同步
   模板属性和下一次管网所需边界；调度器传入的同名兼容参数不得参与计算。
 
-当 `Run` 是 `startFun` 时，控制器最终返回的是 `Run()` 的结果；追加 `DRun()` 的返回值不会
-替换它。`DRun` 更新后的实时状态必须写入同名实例属性和出口节点，不能只放在返回字典。
-如果前端结果字典必须展示积分后的同一步状态，设计阶段要明确一拍语义或调整已确认入口
-方案，不能假定控制器会采用 `DRun` 返回值。
+Dynamic V1 的动态后处理不消费入口业务结果，追加 `DRun()` 的返回值也会被直接丢弃。
+普通动态设备成功时不定义 `result`、不构造结果字典，`Run`/`DRun` 均无需显式返回信息。
+实时展示依靠同名模板实例属性，下游计算依靠出口节点。只有读取实际控制器或包装器后
+确认存在返回值消费者，才增加最小所需返回，并在技术方案中说明消费者和时间层级。
+
+`DRun` 更新后的实时状态必须写入真实消费者需要的同名实例属性和出口节点，不能只放在
+返回字典。如果其他控制器要求前端结果字典展示积分后的同一步状态，设计阶段要明确一拍
+语义和返回消费者，不能假定 V1 会采用 `DRun` 返回值。
 
 ## 数值和边界要求
 
@@ -93,12 +105,15 @@ description: Use when designing, implementing, modifying, or debugging any CSLab
    静默回退掩盖模型失败。
 3. 上下限、溢流、停机、报警或状态投影属于模型选择，开发者确认后才能实现。
 4. 同一动态步中使用的流量、密度、温度、组成等量要明确时间层级，避免混用新旧状态。
-5. 失败时通过 `feedback` 返回受控错误；可恢复回退要说明对守恒和时间精度的影响。
+5. 失败时先通过 `feedback` 说明字段、状态和原因。Dynamic V1 不消费 `DRun` 的失败返回，
+   不可继续时必须抛出含上下文的异常交给控制器停止；不能只返回 `False, {}` 后继续运行。
+   可恢复回退要说明对守恒和时间精度的影响。
 
 ## 输出和诊断
 
-动态模块仍需满足三条输出通道：`result`、同名模板实例属性、出口节点。每步集中同步状态，
-避免前端、落库和下游看到不同时刻的数据。
+按 `cslab-module-contract` 建立输出消费者表。Dynamic V1 普通设备通常只需要同名模板实例
+属性和出口节点；某类模块没有出口节点或没有模板输出时，只实现真实存在的消费者。每步
+集中同步状态，避免实时展示、落库和下游看到不同时刻的数据。
 
 Dynamic V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，不要依赖 `print` 调试。
 临时观测使用项目 logger 或在重定向范围外采集，至少记录 `begin_time`、
@@ -108,19 +123,32 @@ Dynamic V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，�
 
 1. 只禁用目标模块同名 `.pyd/.so`，保留其他已编译依赖；不读取或探测目标二进制。
 2. 使用 `python -B` 直接加载目标 `.py`，确认 `module.__file__` 指向本地源码。
-3. 从服务器获取项目画布和数据，但在本地运行 `chemicalLib/moduleRunBase.py`；网页运行结果
-   不能证明本地源码正确。
+3. 从服务器获取项目画布和数据，但在本地运行测试契约中已经确认的实际工程入口；先在
+   当前项目检索并读取入口，不假定目录名或文件名。网页运行结果不能证明本地源码正确。
 4. 核对测试工程 `Data.PGV["DT"]` 的实际值，连续记录多个时间步，验证状态确实按该步长
    变化、方向符合所选模型、守恒残差满足容差、边界被下游采用，并覆盖静止、正常变化和
    边界工况。
 5. 动态进程受控停止，只清理本次启动的 PID；删除临时观测代码后再做最终回归。
 
+## 动态源码最小性检查
+
+交付前除通用最小实现检查外，再核对：
+
+1. `Run`、`DRun` 和每个辅助方法都有明确的状态、边界或诊断职责；常量导数的一次性包装、
+   重复同步和从未读取的状态应删除或内联。
+2. `DRun` 的兼容参数只为调度签名保留，并在 docstring 中说明不参与步长计算。
+3. 没有已核实的返回消费者时，不定义 `result`、`result_fail` 或只为返回而存在的属性。
+4. 使用 `cslab-module-contract/scripts/audit_module_source.py --family dynamic-v1 <文件>`
+   做静态预检，再结合模板、控制器和运行测试人工确认。
+
 ## 禁止事项
 
-1. 未联网调研、未展示候选方案或未获开发者确认就编写设备模型。
+1. 改变设备方程、模型假设、数值方法或计算结果时，未完成资料收集、调研、候选比较和
+   开发者确认就编写源码。
 2. 从目标 `.pyd/.so` 反推动态方程、字段或边界语义。
 3. 在 `__init__` 读取构造后才挂载的模板属性。
 4. 把逐步调用旧稳态算法包装成动态模型，却没有明确状态方程和时间推进方法。
 5. 只更新内部状态，不同步模板属性和出口节点。
 6. 把动态步长作为外部业务参数传入，或使用 `DRun` 的 `dt` 兼容形参代替
    `self.Data.PGV["DT"]`。
+7. Dynamic V1 没有返回消费者时仍机械构造 `result`、空结果或成功二元组。

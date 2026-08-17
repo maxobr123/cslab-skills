@@ -1,13 +1,13 @@
 ---
 name: cslab-module-develop
-description: Use as the mandatory entry-point workflow when developing, modifying, or debugging any CSLab engineering algorithm module, including operation, dynamic, control, design, chemical-principle, and property-method work. Requires an explicit test contract, developer-provided source collection before online research, template/contract discovery, backend verification for new variables, candidate comparison, complete explanation, and explicit developer approval before implementation, followed by verification and delivery.
+description: Use as the mandatory entry-point workflow when developing, modifying, or debugging any CSLab engineering algorithm module, including operation, dynamic, control, design, chemical-principle, and property-method work. Classifies change risk, requires an explicit test contract, discovers template and runtime consumers, applies research and model gates when results may change, verifies new backend variables, enforces minimal documented code, and requires explicit developer approval before implementation.
 ---
 
 # CSLab 工程算法开发工作流
 
 本 Skill 是开发所有 CSLab 工程算法模块的**强制总入口**。适用于模板驱动业务模块，
-也适用于没有 moduleT 模板的物性、控制和数值算法。除非开发者已在提示词中明确给出并
-确认方案，否则必须先完成调研、方案选择和假设确认，不能直接写代码。
+也适用于没有 moduleT 模板的物性、控制和数值算法。先按第0步判定风险：改变结果时必须
+完成调研、方案选择和假设确认；契约或行为保持改动只执行与风险相称的证据和确认门禁。
 
 | 层 | 配套 Skill | 何时加载 |
 |---|---|---|
@@ -20,10 +20,24 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 
 | 族 | 族包 Skill | 状态 |
 |---|---|---|
-| 通用稳态单元(`domain/operation/`) | `cslab-operation-unit-skeleton` + `cslab-operation-flash` + `cslab-operation-phy-prop` | 可用 |
-| FlashTank 家族 | 在通用稳态组合上增加 `cslab-operation-flashtank` | 可用 |
+| 通用稳态单元(`domain/operation/`) | 必须加载 `cslab-operation-unit-skeleton`；实际调用 Flash 时再加载 `cslab-operation-flash`，实际计算物性时再加载 `cslab-operation-phy-prop` | 可用 |
+| FlashTank 家族 | 加载 `cslab-operation-flashtank`，并按其实际依赖加载 Flash 与物性 Skill | 可用 |
 | 动态模块(`domain/dynamic/`) | `cslab-dynamic-module`，按设备类型再加载可用的专用族包 | 可用 |
 | 控制 / 设计 / 化原等 | 待建 | 无族包时明确告知开发者，不套用其他族词汇或模型硬写 |
+
+## 第0步：判定改动风险
+
+先确定风险等级，再决定是否需要联网调研、候选模型选择和完整方程确认。风险分级不能
+降低测试契约、源码边界、模板契约或开发者实施授权要求。
+
+| 等级 | 典型改动 | 必须执行 |
+|---|---|---|
+| A 结果风险 | 改变方程、模型假设、数值方法、边界、相态、单位口径或计算结果 | 完整执行第1至5.1步，包括开发者资料、联网调研、候选比较、假设和最终方案确认 |
+| B 契约风险 | 改变构造参数、模板属性/节点、`startFun`、输出消费者、返回或错误传播 | 读取模板/API和实际控制器，完整展示契约差异、影响与测试；涉及物理结果时升级为 A |
+| C 行为保持 | 仅补中文注释、删除已证明无消费者的死代码、内联冗余包装或格式整理 | 证明行为不变，列出删除依据和回归测试；无需重复物理调研与模型选择 |
+
+无法证明行为不变时按更高风险处理。无论哪一级，修改算法 `.py` 前都要展示当前范围、
+拟修改文件、消费者、风险和测试契约，并取得开发者明确实施确认。
 
 ## 开发文件边界
 
@@ -57,7 +71,8 @@ description: Use as the mandatory entry-point workflow when developing, modifyin
 
 1. 新建、修改还是故障修复；所属计算模式、设备族和目标文件。
 2. 输入、输出、端口、状态变量、初始条件、边界条件、单位和验收标准。
-3. 哪些结果需要进入 `result`、同名模板属性和出口节点。
+3. 每个输出的真实消费者：入口返回、`result`、同名模板属性、出口节点或其他调用方；
+   没有消费者的通道明确记为“不适用”，不生成占位代码。
 4. 性能、精度、稳定性、兼容性及禁止修改范围。
 5. 本次实际测试位置、数据来源、执行对象、输入工况、参考结果和通过标准。
 
@@ -166,6 +181,10 @@ dynamic、control、design、chemical-principle 等 Flow 语义扩展模块；�
 
 ## 第3步：收集开发者资料并联网调研
 
+本步骤是 A 级改动的强制门禁。B 级先以模板、API、控制器和公开调用源码为证据；若发现
+会改变物理结果则升级为 A。C 级记录“行为保持，不涉及模型调研”，不得为了完成流程而
+虚构候选物理方案或无关网络来源。
+
 开发者尚未在提示词中提供资料时，联网查询前先询问是否可以提供本模块的技术资料，
 包括 PDF、网页地址、国家或行业标准、论文、教材、设计手册、设备说明书、工艺包、
 已确认公式、流程图、测试数据和
@@ -189,10 +208,13 @@ dynamic、control、design、chemical-principle 等 Flow 语义扩展模块；�
 4. 资料之间口径不一致时说明差异，不擅自拼接方程。
 
 网络不可用或找不到可靠来源时明确报告阻塞，向开发者索取资料或允许的模型依据，不凭
-记忆补造来源。修复既有算法时也要查询该模型或数值方法的可靠资料，确认修复没有改变
-既定物理口径。
+记忆补造来源。修复既有算法且涉及模型、数值方法或计算结果时，也要查询可靠资料，确认
+修复没有无意改变既定物理口径。纯契约修复或已证明行为不变的清理按风险等级执行。
 
 ## 第4步：方案选择和模型假设确认（编码门禁）
+
+本步骤适用于 A 级改动，以及 B/C 级实施中发现的任何结果口径变化。纯契约或行为保持
+改动不得虚构模型选项；只确认真实存在的契约取舍、删除依据和行为不变证据。
 
 用对比表向开发者展示候选方案，给出有依据的推荐，但由开发者选择。逐项列出所有影响
 结果的假设，例如稳态/动态、理想/非理想、等温/绝热、完全混合/分层、单相/多相、
@@ -251,6 +273,9 @@ dynamic、control、design、chemical-principle 等 Flow 语义扩展模块；�
 
 开发者确认计算过程和方程表后，才进入实现。
 
+B 级不改变物理模型时，复述现有方程口径并重点说明契约调用过程；C 级引用已确认设计，
+说明本次不改变方程、状态和数值方法，并完整展示删除或注释修改的依据。
+
 ## 第5.1步：技术方案理解与最终实施确认（编码门禁）
 
 在修改任何算法 `.py` 前，必须向开发人员完整展示并解释当前技术方案。至少包括：
@@ -259,7 +284,8 @@ dynamic、control、design、chemical-principle 等 Flow 语义扩展模块；�
 2. 调研来源、全部候选方案、对比结果、推荐方案及推荐理由；
 3. 全部模型假设、主入口及各方法的计算顺序；
 4. 衡算对象、主要方程，以及每个变量的含义、单位、维度、符号和数据来源；
-5. 输入、状态、输出和 `result`、同名实例属性、出口对象三个平台输出通道；
+5. 输入、状态、输出及其消费者；逐项说明是否需要入口返回、`result`、同名实例属性、
+   出口对象或其他通道，不适用的通道写明原因；
 6. 数值方法、初值、步长、容差、收敛条件、边界处理和失败策略；
 7. 待配置后台变量、拟修改的 `.py`、测试与验收方式、风险、限制和性能影响。
 
@@ -287,8 +313,8 @@ dynamic、control、design、chemical-principle 等 Flow 语义扩展模块；�
    必须按契约补全。若返回 500「float()/int() ... 'NoneType'」,是模板里存在
    默认值为空的数值属性(服务端缺陷,见 `cslab-modulet-api` 的 pyTemp 陷阱),
    不要重试——直接按第2步的对照表手写骨架,不损失任何信息。
-2. 加载 `cslab-module-contract` 落实平台通用契约:注入、startFun、返回约定、
-   三条输出通道、feedback。
+2. 加载 `cslab-module-contract` 落实平台通用契约：注入、`startFun`、消费者驱动的返回与
+   输出、feedback、中文源码文档和最小必要实现。
 3. 加载所属**族包**写类结构与算法体（通用稳态单元：
    `cslab-operation-unit-skeleton`；FlashTank 再增加 `cslab-operation-flashtank`；
    动态模块使用 `cslab-dynamic-module`；闪蒸用 `cslab-operation-flash`；物性统一用
@@ -298,12 +324,18 @@ dynamic、control、design、chemical-principle 等 Flow 语义扩展模块；�
 5. 只实现已确认方案；新增推测或改变假设时立即停止并重新走第4、5步。
 6. 实现中发现未约定的模块契约变量时立即停止，回到“新增模块契约变量后台配置门禁”；
    API 复核和重新确认完成前，不得用代码兼容手段临时接入。
+7. 为每个新增或保留的方法、参数、内部状态、缓存和返回字段标记契约、物理、消费者、
+   异常隔离、复用或测试依据；没有依据的代码删除或内联。模板同名参数和框架入口即使
+   算法体不读取也不得擅删，但必须注释其保留原因。
+8. 按 `cslab-module-contract` 完成模块、类和每个方法的中文文档；注释必须覆盖参数单位、
+   返回、状态修改、异常和步骤，不能只满足“存在 docstring”。
 
 ## 第7步：本地验证
 
-加载 `cslab-module-verify`:写 `__main__` 脚手架(`obtainData` 免鉴权取数 → 建
-`Data`/`Flow` → 建模块 → `Run()` → 检查 `result`),按其检查单核对返回值形态、
-落库属性、出口流股回写。使用 Python 3.7.6，并确认依赖编译模块与当前平台匹配：
+加载 `cslab-module-verify`，按实际模块族和消费者选择单模块或完整工程验证。需要入口
+结果的稳态模块核对返回形态；Dynamic V1 等不消费返回值的模块核对实例属性、出口节点、
+状态序列和错误传播，不得为了测试方便新增 `result`。使用 Python 3.7.6，并确认依赖
+编译模块与当前平台匹配：
 Windows 使用 `cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。缺少兼容
 二进制时才退化为静态审查。
 
@@ -330,15 +362,16 @@ Windows 使用 `cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。缺
 1. 模板属性名/节点名与形参名**必须严格同名**,这是唯一的参数注入通道。
 2. `startFun` 拼错 = 静默假成功,交付前必须核对。
 3. 属性注入不做单位换算,所有默认值与算法内部计算一律 SI 单位。
-4. 前端展示走 `result`,落库走同名实例属性赋值,出口状态走写出口流股——三条通道
-   相互独立,漏一条就是"算对了但看不到"。
+4. 输出按消费者实现：需要前端结果时写 `result`，需要实时展示/落库/引用时写同名实例
+   属性，需要下游边界时写出口节点；没有消费者的通道不得机械生成。
 5. 未连接节点注入 `None`,访问前判空。
 6. 接口取不到的信息先查对应 Skill，再查自己负责范围内源码或直接问开发者；不得通过
    读取、反编译、反射或试探 `.pyd/.so` 补全契约，也不得编造。
-7. 未完成网络调研、方案选择、假设确认、完整计算设计说明和开发人员最终明确同意前，
-   不得创建或修改算法 `.py`。
+7. A 级改动未完成资料收集、网络调研、方案选择、假设确认、完整计算设计和开发人员最终
+   明确同意前，不得创建或修改算法 `.py`；B/C 级按风险分级完成对应证据和确认。
 8. 不把某个设备的专用方程写成所有模块共享的通用规则。
 9. 不得因选择控件限制删减候选方案、替开发者筛选或以推荐项、超时、默认值自动确认；
    原生列表不可用时必须使用等价编号列表并等待明确回复。
 10. 未约定的模块契约变量必须先完成后台配置和 API 复核；不得用 `**kwargs`、硬编码
     默认值或临时实例属性绕过模板契约。
+11. 不得保留没有契约、物理、消费者、异常隔离、复用或测试依据的方法、状态和结果字段。

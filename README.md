@@ -15,7 +15,7 @@ L1 工作流入口(族无关)
 
 L2 平台通用契约(所有族共享,由模板系统+调度框架决定)
     cslab-modulet-api         模板系统接口:分类/列表/属性/pyTemp/CRUD、算法槽位
-    cslab-module-contract     运行契约:同名注入、startFun、输出三通道、feedback
+    cslab-module-contract     运行契约:同名注入、startFun、消费者驱动输出、feedback
     cslab-module-verify       取数接口、环境约束、验证检查单
 
 L3 模块族包(每族一组,按 L0 流水线增量生产)
@@ -39,6 +39,7 @@ L3 模块族包(每族一组,按 L0 流水线增量生产)
 - 主项目 `D:/project/cslab_onedrive/.agents/skills/` 是 Codex 自动发现的运行副本。
 - 修改 Skill 时先更新本仓库并完成校验，再同步到 `.agents/skills/`；若在运行副本中
   临时修订，必须回写本仓库后再提交，禁止形成两套长期分叉内容。
+- 使用 `scripts/sync_skills.py` 执行单向同步或逐文件 SHA-256 漂移检查。
 - 提交前逐个比较同名 `SKILL.md` 的 SHA256，并确认目录集合一致；推送本仓库后才算完成。
 
 ## 维护约定(活文档纪律)
