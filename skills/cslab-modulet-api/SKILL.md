@@ -1,6 +1,6 @@
 ---
 name: cslab-modulet-api
-description: Use when querying or modifying CSLab module templates over HTTP - device type categories, template list and detail, backend configuration and API verification of new module contract variables, API-derived variable catalog maintenance, pyTemp skeleton generation, template CRUD, and template-to-algorithm mapping fields.
+description: Use when querying or modifying CSLab module templates over HTTP - direct account login and token refresh, device type categories, template list and detail, backend configuration and API verification of new module contract variables, API-derived variable catalog maintenance, pyTemp skeleton generation, template CRUD, and template-to-algorithm mapping fields.
 ---
 
 # moduleT 模板接口契约
@@ -16,11 +16,51 @@ description: Use when querying or modifying CSLab module templates over HTTP - d
   (服务端取空格后第二段,前缀词不敏感)。
 - 响应统一包装:`{"status": 200, "msg": "成功", "data": <业务数据>}`,先判
   `status` 再取 `data`。
-- token 有效期很短(服务端 `JWT_EXPIRATION_DELTA` 配置,当前部署实测 900 秒)。
-  过期返回 `{"status": "40001", "msg": "签名已过期", "state": "40001"}`——注意
-  此处 `status` 是**字符串**,判等时别只匹配整数。遇到即请开发者重新登录刷新
-  `CSLAB_TOKEN`,重试无意义。
-- 401/40001/接口不可达时向开发者确认 ENV,不要伪造数据继续。
+
+### 后台访问触发与凭据门禁
+
+- 仅在开发者要求读取/修改后台模板,或开发任务必须核对当前模板注入契约、验证新增
+  变量是否已配置时访问后台。普通代码阅读、算法开发和已有目录查询不得预先索取凭据。
+- 每个新的已认证后台访问任务中,如果开发者没有在当前任务明确提供账号密码或有效的
+  短期令牌,先说明服务器地址、访问目的和只读/写入范围,再请开发者提供账号和密码。
+  已在当前任务明确提供的凭据不重复询问。
+- 账号密码授权只允许登录,不等于授权新增、修改或删除模板。写接口仍必须单独完成业务
+  方案确认、目标模板确认、完整 payload 确认和写入授权。
+- 账号、密码、`token`、`rtoken` 仅在当前任务的进程内存中使用。禁止写入 Skill、源码、
+  配置、临时文件、Shell 历史、日志或 Git,也禁止在命令输出和最终答复中展示实际值。
+- 不从浏览器 localStorage/cookie、历史文件、日志或 Git 中搜集凭据。没有安全输入通道时,
+  停止登录并说明限制,不得把密码拼进会持久化的脚本或调试文件。
+
+### 无 UI 账号登录
+
+获取后台模板时默认直接使用 HTTP,没有必要不得打开网页 UI:
+
+1. `GET auth/image/`,确认 `status=200`,从 `data` 取 `key`、`x`、`y`。
+2. `POST login/`,JSON body 使用:
+   `username`、`password`、`key`、`image_verify_code: [x, y]`、`device_type`。
+3. 确认登录包装响应 `status=200`,仅在内存中保存 `data.token` 和 `data.rtoken`；只允许
+   输出“是否取得令牌”,不得输出令牌正文或完整登录响应。
+4. 普通 API 请求使用 `Authorization: jwt <token>` 和 `DEVICE-TYPE: <device_type>`。
+
+当前部署的 `auth/image/` 会返回可按正式接口契约提交的验证参数。若其他部署要求开发者
+人工完成验证码、MFA 或 SSO,停止自动登录并请开发者处理,不得破解或绕过安全验证。仅在
+HTTP 契约不可用、必须人工认证或开发者明确要求观察网页操作时使用 UI。
+
+### 令牌刷新与并发控制
+
+- token 有效期很短(服务端 `JWT_EXPIRATION_DELTA` 配置,当前部署实测约 900 秒)。登录站
+  当前在首次登录后把刷新检查点设为 `Date.now() + 780 * 1000`,以便提前刷新。
+- 不持续轮询。每次发送已认证请求前检查刷新时间;长时间无请求时不产生额外流量。
+- 到达刷新检查点后调用 `GET auth/refresh/`,请求头使用
+  `Authorization: jwt <rtoken>` 和 `DEVICE-TYPE`。注意此处使用刷新令牌,不是旧 token。
+- 刷新成功且包装响应 `status=200` 后,原子替换 `data.token`、`data.rtoken` 和下一刷新
+  时间。当前前端以 HTTP `Date` 响应头校正 `data.timestamp` 到本地时钟。
+- 并发请求必须采用 single-flight:同一时刻只发一个刷新请求,其他请求等待该结果后再
+  读取新 token,不得并发重复刷新或继续使用已经被替换的 rtoken。
+- 刷新网络失败、业务失败、401,或业务接口返回
+  `{"status": "40001", "msg": "签名已过期", "state": "40001"}` 时,清除内存中的
+  token、rtoken 和刷新时间。`40001` 的 `status` 可能是字符串,判断时兼容字符串/数字。
+  仍持有本次任务凭据时最多重新登录一次;再次失败则停止并报告,不得无限重试或伪造数据。
 
 ## 接口总表
 
@@ -31,6 +71,25 @@ description: Use when querying or modifying CSLab module templates over HTTP - d
 | `moduleT/?pk=<id>` | GET | 单模板详情:module/moduleProp/moduleNode |
 | `moduleT/pyTemp?pk=<id>&class_name=<类名>` | GET | 由模板生成 Python 类骨架 |
 | `moduleT/` | POST/PUT/DELETE | 模板/属性/节点增改删,body `{"item":..., "parameter": {...}}` |
+
+## 无 UI 模板查询流程
+
+1. 按“后台访问触发与凭据门禁”确认确有后台查询需要,再通过无 UI 登录取得短期令牌。
+2. 调用 `moduleT/list/` 获取候选,按 `name`、`label`、中文描述和目标算法名匹配。多个
+   候选时完整展示给开发者选择,不得自行猜测。
+3. 选定模板后只调用一次 `moduleT/?pk=<id>`。该详情 GET 存在归一化回写副作用,不得因
+   输出格式或调试需要反复请求;应在内存中完成字段压缩和多种视图整理。
+4. 核对 `startFun` 和四个算法槽位,确认目标文件与类名,例如
+   `dynamic.Dtank_Opensgy,Dtank_Open`。
+5. 整理 `moduleProp`、`moduleProp7`、`moduleNode`;对 `{describe, value}` 包装字段提取
+   当前值。下拉字段的 `value=[当前值, 全部候选]`,不要把候选全集误报为模板参数。
+6. 属性至少报告变量名、中文含义、类型、默认值、输入/输出、单位、冷态和计算状态;
+   节点至少报告名称、含义、节点类型、方向和相态。单位为空、名称疑似错误等只标记为
+   “后台当前配置/待确认”,不得自行修正后冒充 API 事实。
+7. 输出登录状态、模板 ID、算法映射和整理后的契约即可。禁止输出完整鉴权响应、实际
+   Authorization 请求头、带令牌 URL 或任何账号密码/token/rtoken。
+8. 将新取得且已由详情 API 证实的变量与后台变量目录比对并补充;当前模板的实际契约仍
+   以本次详情响应为准。
 
 模板 id(`t_module_pk`)及属性/节点 id 均为 32 位无横线 hex,无业务含义。
 
