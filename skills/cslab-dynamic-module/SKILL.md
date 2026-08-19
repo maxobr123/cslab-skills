@@ -1,6 +1,6 @@
 ---
 name: cslab-dynamic-module
-description: Use when designing, implementing, modifying, or debugging CSLab domain/dynamic modules. Defines the verified DynamicCalculateControlV1 lifecycle, Run plus DRun scheduling, PGV DT ownership, lazy state initialization, consumer-driven outputs, diagnostics, minimal implementation, and source-only full-flow verification; other controller versions require separate runtime discovery.
+description: Use when designing, implementing, modifying, or debugging CSLab domain/dynamic modules. Defines the verified DynamicCalculateControlV1 lifecycle, Run plus DRun scheduling, PGV DT ownership, one-step advancement with default classical RK4 integration, lazy state initialization, consumer-driven outputs, numerical protection, diagnostics, minimal implementation, and source-only full-flow verification; other controller versions require separate runtime discovery.
 ---
 
 # CSLab 动态模块通用契约(L3)
@@ -8,7 +8,9 @@ description: Use when designing, implementing, modifying, or debugging CSLab dom
 本 Skill 只定义 `domain/dynamic/` 模块共享的调度和状态生命周期。具体设备方程、经验模型、
 数值积分方法和模型假设按 `cslab-module-develop` 的风险分级执行；改变计算结果时完成资料
 收集、调研、候选比较和开发者确认，纯注释或已证明行为不变的清理不重复做物理模型选择。
-不要把某个水罐、反应器或管道的模型当作动态族通用公式。
+普通常微分动态模型的族级默认积分方法为经典显式 RK4，不需要为默认方法虚构候选选择；
+只有存在刚性、微分代数方程、强不连续或解析更新等特殊依据时才比较替代方法并由开发者
+确认。不要把某个水罐、反应器或管道的设备方程当作动态族通用公式。
 
 同时加载：
 
@@ -52,8 +54,8 @@ description: Use when designing, implementing, modifying, or debugging CSLab dom
    该值作为有效步长，必须以 `self.Data.PGV["DT"]` 覆盖或忽略它。
 4. 开发和测试时通过测试工程的 `Data.PGV["DT"]` 配置步长；禁止直接调用
    `DRun(dt=<测试值>)` 改变算法步长并据此宣称验证通过。
-5. `Data`、`PGV` 或 `DT` 缺失，以及 `DT` 不是有限正数时，通过 `feedback` 返回包含字段
-   路径和实际值的受控错误，不静默采用硬编码默认值。
+5. `Data`、`PGV` 或 `DT` 缺失，以及 `DT` 不是有限正数时，不推进当前动态步，保留上一
+   已提交状态和出口状态；不得抛异常、发送错误反馈或静默采用硬编码默认值。
 
 ## 构造和状态初始化
 
@@ -71,8 +73,8 @@ description: Use when designing, implementing, modifying, or debugging CSLab dom
 1. `Run`、`DRun` 及辅助方法逐步计算顺序；
 2. 每个动态状态的初值、导数、边界和回写位置；
 3. 温度、压力、组成、流量等关键量是固定输入、上游继承、代数方程结果还是动态状态；
-4. `self.Data.PGV["DT"]` 的项目配置值、单位及其与内部积分子步的关系，采用显式/隐式/
-   自适应等哪种方法；
+4. `self.Data.PGV["DT"]` 的项目配置值、单位、单步推进职责及其与 RK4 内部阶段或事件子步
+   的关系；特殊情况不使用默认 RK4 时，说明替代方法及依据；
 5. 管网或下游模块使用本步还是下一步边界，是否存在一拍延迟；
 6. 空设备、满设备、上下限、相态切换、不收敛和断开节点如何处理。
 
@@ -85,8 +87,9 @@ description: Use when designing, implementing, modifying, or debugging CSLab dom
 具体职责由已选方案决定，但必须显式划分：
 
 - `Run()`：完成当前时刻的代数计算、状态准备和已确认的边界发布；
-- `DRun(...)`：从 `self.Data.PGV["DT"]` 读取有效步长，按已选方法推进动态状态，并同步
-  模板属性和下一次管网所需边界；调度器传入的同名兼容参数不得参与计算。
+- `DRun(...)`：从 `self.Data.PGV["DT"]` 读取有效步长，默认按经典 RK4 推进动态状态；
+  特殊情况按开发者已确认的替代方法推进。随后同步模板属性和下一次管网所需边界；调度器
+  传入的同名兼容参数不得参与计算。
 
 Dynamic V1 的动态后处理不消费入口业务结果，追加 `DRun()` 的返回值也会被直接丢弃。
 普通动态设备成功时不定义 `result`、不构造结果字典，`Run`/`DRun` 均无需显式返回信息。
@@ -97,17 +100,56 @@ Dynamic V1 的动态后处理不消费入口业务结果，追加 `DRun()` 的�
 返回字典。如果其他控制器要求前端结果字典展示积分后的同一步状态，设计阶段要明确一拍
 语义和返回消费者，不能假定 V1 会采用 `DRun` 返回值。
 
+## 单步推进与默认 RK4
+
+动态模型必须把“单步调度”和“状态积分”作为两个明确职责设计：
+
+1. **单步推进方法**负责从时刻 `t_n` 推进到 `t_n + DT`。它每次重新读取并保护
+   `self.Data.PGV["DT"]`，快照本步边界和旧状态，调用积分方法生成候选状态，执行边界
+   保护、出口发布和最终提交。一次调度只能推进一个项目步长，不能在 `Run`、`DRun` 或
+   辅助方法之间重复推进。
+2. **RK4 方法**只负责根据状态方程计算一个候选积分结果，不直接修改模板状态或真实出口。
+   新开发模块默认将两个职责分别组织为 `_advance_one_step` 和 `_rk4_step`；已有模块存在
+   同等职责的方法时可以保留历史名称，但必须在模块说明和方法 docstring 中标明对应关系。
+3. 动态常微分方程默认使用经典显式四阶 Runge-Kutta（RK4）。设 `h=DT`、
+   `dy/dt=f(t,y,boundary)`，一个无事件单步按以下公式计算：
+
+   ```text
+   k1 = f(t_n,         y_n,             boundary)
+   k2 = f(t_n + h/2,   y_n + h*k1/2,    boundary)
+   k3 = f(t_n + h/2,   y_n + h*k2/2,    boundary)
+   k4 = f(t_n + h,     y_n + h*k3,      boundary)
+   y_(n+1) = y_n + h*(k1 + 2*k2 + 2*k3 + k4)/6
+   ```
+
+4. 必须说明 `boundary` 在四个 RK4 阶段中是本步冻结值、阶段重算值还是外部插值值，不能
+   混用新旧时间层级。每个 `k` 的 shape、单位必须与状态向量一致；中间状态和步末候选
+   状态均执行已确认的数值保护，但只有步末候选可以提交。
+5. 步内存在触满、耗尽、相态切换等事件时，先定位事件，再对事件前后分别执行 RK4 子步；
+   所有子步时长之和必须等于本次 `DT`，不得因分段多推进或少推进时间。
+6. 只有存在明确特殊情况时才改用其他积分方法，例如刚性方程、微分代数方程、强不连续
+   模型、已验证解析更新，或 RK4 无法满足稳定性/性能要求。改变默认 RK4 属于 A 级结果
+   风险，必须展示原因、候选方法、稳定性、精度、步长和性能影响，由开发者确认后实施。
+7. 纯代数动态后处理或状态在一步内具有开发者确认的精确解析更新时可以不调用 RK4，但仍
+   必须保留单步推进职责，并在技术方案中明确“不适用 RK4”的方程依据和验证方法。
+
 ## 数值和边界要求
 
-1. 每步读取并校验 `self.Data.PGV["DT"]` 为有限正数，记录单位；不得读取外部 `dt` 参数，
-   也不得回退为与项目配置无关的硬编码步长。
-2. 状态更新必须符合开发者选择的守恒方程和数值方法；不要用截断、`nan_to_num(0)` 或
-   静默回退掩盖模型失败。
-3. 上下限、溢流、停机、报警或状态投影属于模型选择，开发者确认后才能实现。
+动态数值保护统一执行 `cslab-module-contract` 的
+[`references/numerical-boundary-protection.md`](../cslab-module-contract/references/numerical-boundary-protection.md)，
+本节只补充动态状态特有要求：
+
+1. 每步读取并保护 `self.Data.PGV["DT"]`；只有有限正值才推进状态。无有效步长时保留上一
+   已提交状态，不得读取外部 `dt` 参数或回退为硬编码步长。
+2. 状态更新必须符合开发者选择的守恒方程和数值方法。容差归零、状态投影、备用计算和
+   上一有效值只能按已确认的保护表实施，不能把所有非有限值无条件替换为零。
+3. 干设备、满设备、上下限、溢流、停机和状态投影属于正常边界模型，开发者确认后按
+   物理关系保护，不发送错误反馈。
 4. 同一动态步中使用的流量、密度、温度、组成等量要明确时间层级，避免混用新旧状态。
-5. 失败时先通过 `feedback` 说明字段、状态和原因。Dynamic V1 不消费 `DRun` 的失败返回，
-   不可继续时必须抛出含上下文的异常交给控制器停止；不能只返回 `False, {}` 后继续运行。
-   可恢复回退要说明对守恒和时间精度的影响。
+5. 先完整计算并保护候选状态，再发布出口，最后提交内部状态。候选状态无法恢复时放弃
+   当前步；出口发布失败时恢复出口快照并保留旧状态，保护过程不抛异常、不返回失败结果。
+6. 保护触发后的状态仍须满足质量、组分、能量等已选衡算；直接截断时必须给出被截掉量的
+   物理去向，例如超过设备容量的质量进入溢流。
 
 ## 输出和诊断
 
