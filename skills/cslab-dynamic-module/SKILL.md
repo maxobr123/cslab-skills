@@ -1,6 +1,6 @@
 ---
 name: cslab-dynamic-module
-description: Use when designing, implementing, modifying, or debugging CSLab domain/dynamic modules. Defines the verified DynamicCalculateControlV1 lifecycle, Run plus DRun scheduling, PGV DT ownership, one-step advancement with default classical RK4 integration, lazy state initialization, consumer-driven outputs, numerical protection, diagnostics, minimal implementation, and source-only full-flow verification; other controller versions require separate runtime discovery.
+description: Use when designing, implementing, modifying, or debugging CSLab domain/dynamic modules. Defines the verified Dynamic V4 controller and module entry boundaries, template Run, sub-process RunDynamic, special RunOde dispatch, PGV DT ownership for ordinary dynamic devices, one-step advancement with default classical RK4 integration, lazy state initialization, consumer-driven outputs, numerical protection, diagnostics, minimal implementation, and source-only full-flow verification.
 ---
 
 # CSLab 动态模块通用契约(L3)
@@ -18,42 +18,67 @@ description: Use when designing, implementing, modifying, or debugging CSLab dom
 - `cslab-module-contract`：构造注入、输出通道、feedback 和中文文档规范；
 - `cslab-module-verify`：目标源码直载和整图动态验证。
 
-## 先确认动态控制器
+## 先确认动态控制器和测试入口
 
-先从当前工程运行入口和控制器映射确认实际版本。本 Skill 下述返回和调度细节只对已验证的
-`DynamicCalculateControlV1` 生效。若实际使用 Dynamic V3、V4 或其他控制器，先读取对应
-运行源码，记录 `startFun`、追加生命周期调用、返回值消费者、实时推送和错误处理，再向
-开发者展示差异；不得直接套用 V1。
+每次开发先读取当前工程的实际运行入口、控制器映射、目标模板 `startFun` 和控制器的
+`algorithm_call()`。不得仅凭历史测试文件、方法名称相似或旧版本注释推断生命周期。
 
-## Dynamic V1 调度生命周期
+当前仓库已核实：
 
-当前 `callow_way="dynamic"` 映射到 `DynamicCalculateControlV1`。每个动态循环：
+1. 当前动态测试入口 `chemicalLib/runServerDynamic_v2.py` 导入
+   `chemicalLib/runServer_v2.py`；后者再使用 `calculateControl_v2.py`，将
+   `callow_way="dynamic"` 映射为
+   `DynamicCalculateControlMainV4`，将动态子进程 `dynamic_dynamic` 映射为
+   `DynamicCalculateControlSubV4`。
+2. `runServer_v2.py` 无论主进程还是动态子进程，最终都调用控制器的 `run()`。小写
+   `run()` 是**控制器运行方法**，不是 `domain/dynamic/` 设备入口。
+3. V4 主控制器对普通模块调用模板 `startFun`；V4 子控制器固定无参调用设备模块的
+   `RunDynamic()`。所以用户所说的“`dynamic_run` 或类似名称”，在当前设备契约中的准确
+   名称是大小写敏感的 `RunDynamic()`。
+4. `DRun()` 是 `DynamicCalculateControlV1` 的历史追加调用。V4 源码已经把该逻辑注释并标为
+   废弃；新动态模块不得把 `DRun()` 作为默认入口，也不得保留 `Run() -> DRun()` 双调用设计。
+5. 旧入口 `runServerDynamic.py -> runServer.py -> calculateControl.py` 仍指向 V1；其中
+   `is_dynamic=True` 会拼出 `dynamic_dynamic`，但旧映射没有该项。该链路不能作为当前 V4
+   验收入口，也不能用来推导新模块方法名。
 
-1. 更新外部参数和运行状态；
-2. 按执行顺序运行模块；
-3. 对每个模块无参调用模板 `startFun`；
-4. 若 `startFun != "DRun"` 且实例存在 `DRun`，追加调用
-   `DRun(begin_time=<本步起始时间>, dt=<step_second>)`；这里的 `dt` 只是现有调度器的兼容
-   形参，不是动态算法的有效步长来源；
-5. 模块循环结束后运行管网求解；
-6. 执行 `begin_time += step_second`，进入下一步。
+控制器升级或工程使用其他映射时，重新记录入口方法、调用参数、返回值消费者、实时推送和
+错误处理，再更新本 Skill 或把差异限定在当前任务；不得把 V4 契约盲目套到其他版本。
 
-因此常见模板 `startFun="Run"` 的实际顺序是 `Run()` → `DRun(begin_time, dt)` → 管网。
-若模板直接配置 `startFun="DRun"`，基础控制器会无参调用一次 `DRun()`，不会追加第二次；
-此时 `DRun` 的参数必须有默认值，并且模块仍需自行完成所选方案要求的边界发布。无论
-调度器采用哪种调用形式，动态算法每步都必须执行 `dt = self.Data.PGV["DT"]` 获取有效
-步长，不得使用调用方传入的 `dt` 决定状态推进量。
+## Dynamic V4 入口矩阵
+
+必须先判定目标模块运行在哪个控制器角色，再选择入口：
+
+| 控制器角色/模板条件 | 控制器方法 | 设备模块入口 | 调用参数 | 说明 |
+|---|---|---|---|---|
+| V4 主进程，普通模板 | `run()` | 模板 `startFun`，通常为 `Run()` | 无参 | 每轮只调用一次，不再追加 `DRun()` |
+| V4 主进程，`startFun="RunOde"` | `run()` | `RunOde(ts, dt)` | `ts=begin_time`，`dt=effective_step` | 已存在的特殊 ODE 分派，不是普通设备默认入口 |
+| V4 动态子进程 | `run()` | `RunDynamic()` | 无参 | 子控制器忽略模板 `startFun`，固定查找 `RunDynamic` |
+| 历史 V1 | `run()` | `startFun` 后可能追加 `DRun(...)` | 历史参数 | 只用于维护明确锁定 V1 的旧工程，不用于新模块 |
+
+名称必须严格区分：
+
+- `run()`：当前 V4 主、子控制器的运行方法；
+- `Run()`、`RunDynamic()`、`RunOde()`：设备模块可能使用的入口；
+- `run_dynamic()`：旧 `runServer.py`/V3 控制器出现过的控制器方法，不是当前 V4 设备入口；
+- `dynamic_run()`：当前源码未发现该方法，不得使用；
+- `DRun()`：仅为历史 V1 契约，不得根据旧单元测试把它恢复到 V4 模块。
+
+模板入口不存在时基础控制器会按成功空结果继续，`RunDynamic()` 不存在时子控制器也会返回
+成功空结果。因此方法名写错可能表现为“运行成功但状态不变化”，验收必须检查实际入口被
+调用和状态序列，不能只看进程未报错。
 
 ## 动态步长来源
 
-1. `self.Data.PGV["DT"]` 是 `domain/dynamic/` 算法获取动态步长的统一入口。每次推进状态
-   前读取当前值，不把构造时缓存值视为永久步长。
-2. 动态步长不是构造函数、模板 `moduleProp`、`Run` 或 `DRun` 的外部业务传参；不得为此
-   新增 `dt` 模板属性、后台变量或构造形参。
-3. 若现有调度器为兼容历史签名向 `DRun` 传入 `dt`，可以保留兼容形参，但算法不得读取
-   该值作为有效步长，必须以 `self.Data.PGV["DT"]` 覆盖或忽略它。
-4. 开发和测试时通过测试工程的 `Data.PGV["DT"]` 配置步长；禁止直接调用
-   `DRun(dt=<测试值>)` 改变算法步长并据此宣称验证通过。
+1. 普通 `domain/dynamic/` 设备在 `Run()` 或 `RunDynamic()` 的单步推进中，通过
+   `self.Data.PGV["DT"]` 获取项目动态步长。每步只读取并锁定一次，不把构造期缓存值视为
+   永久步长。
+2. 普通设备不得新增 `dt` 模板属性、后台变量、构造形参或入口形参，也不得从测试调用方
+   直接传入步长。
+3. `RunOde(ts, dt)` 是 V4 控制器已有的特殊签名，控制器明确传入 `effective_step`。只有模板
+   已配置 `RunOde` 且实际模型确属该特殊路径时才使用；必须在技术方案中说明其时间和步长
+   来源，不得把该签名推广到普通 `Run`/`RunDynamic` 设备。
+4. 开发和测试普通设备时通过测试工程的 `Data.PGV["DT"]` 配置步长；直接调用历史
+   `DRun(dt=<测试值>)` 的测试不能证明当前 V4 契约正确。
 5. `Data`、`PGV` 或 `DT` 缺失，以及 `DT` 不是有限正数时，不推进当前动态步，保留上一
    已提交状态和出口状态；不得抛异常、发送错误反馈或静默采用硬编码默认值。
 
@@ -70,11 +95,11 @@ description: Use when designing, implementing, modifying, or debugging CSLab dom
 
 在创建或修改源码前向开发者说明：
 
-1. `Run`、`DRun` 及辅助方法逐步计算顺序；
+1. 已核实的控制器版本和角色、模板 `startFun`、实际设备入口及逐步计算顺序；
 2. 每个动态状态的初值、导数、边界和回写位置；
 3. 温度、压力、组成、流量等关键量是固定输入、上游继承、代数方程结果还是动态状态；
-4. `self.Data.PGV["DT"]` 的项目配置值、单位、单步推进职责及其与 RK4 内部阶段或事件子步
-   的关系；特殊情况不使用默认 RK4 时，说明替代方法及依据；
+4. 普通设备 `self.Data.PGV["DT"]` 的项目配置值、单位、单步推进职责及其与 RK4 内部阶段
+   或事件子步的关系；特殊 `RunOde` 路径则说明控制器传入的 `ts/dt` 语义；
 5. 管网或下游模块使用本步还是下一步边界，是否存在一拍延迟；
 6. 空设备、满设备、上下限、相态切换、不收敛和断开节点如何处理。
 
@@ -82,32 +107,31 @@ description: Use when designing, implementing, modifying, or debugging CSLab dom
 数据来源、初始和边界条件、闭合关系、已确认假设及数值方法。开发者未确认方案或假设时，
 停在设计阶段。
 
-## Run 与 DRun 职责
+## 入口与单步推进职责
 
-具体职责由已选方案决定，但必须显式划分：
+具体职责由已选方案和已核实入口决定，但必须保持“一个控制器周期只推进一次状态”：
 
-- `Run()`：完成当前时刻的代数计算、状态准备和已确认的边界发布；
-- `DRun(...)`：从 `self.Data.PGV["DT"]` 读取有效步长，默认按经典 RK4 推进动态状态；
-  特殊情况按开发者已确认的替代方法推进。随后同步模板属性和下一次管网所需边界；调度器
-  传入的同名兼容参数不得参与计算。
+- 普通 V4 主进程模块：`Run()` 通常完成本步边界快照、代数计算、RK4 状态推进、保护、
+  模板属性同步和出口发布；不得再拆出一个由控制器自动追加的 `DRun()`。
+- V4 动态子进程模块：`RunDynamic()` 承担同等的单步职责；它是设备入口，名称必须保持
+  PascalCase，且无外部参数。
+- 特殊 V4 ODE 模块：`RunOde(ts, dt)` 按已确认的控制器契约推进；不得同时在 `Run()` 或
+  `RunDynamic()` 中重复积分。
 
-Dynamic V1 的动态后处理不消费入口业务结果，追加 `DRun()` 的返回值也会被直接丢弃。
-普通动态设备成功时不定义 `result`、不构造结果字典，`Run`/`DRun` 均无需显式返回信息。
-实时展示依靠同名模板实例属性，下游计算依靠出口节点。只有读取实际控制器或包装器后
-确认存在返回值消费者，才增加最小所需返回，并在技术方案中说明消费者和时间层级。
+V4 基础控制器会接收入口返回值，但当前动态主控制器后处理只更新实例预览，动态子控制器
+后处理为空。普通动态设备没有已核实业务结果消费者时，不定义 `result`、不构造结果字典，
+成功路径无需显式返回信息。实时展示依靠模板同名实例属性，下游计算依靠出口节点。只有从
+实际控制器或包装器确认存在返回值消费者，才增加最小所需返回，并说明消费者和时间层级。
 
-`DRun` 更新后的实时状态必须写入真实消费者需要的同名实例属性和出口节点，不能只放在
-返回字典。如果其他控制器要求前端结果字典展示积分后的同一步状态，设计阶段要明确一拍
-语义和返回消费者，不能假定 V1 会采用 `DRun` 返回值。
+状态推进后的值必须写入真实消费者需要的同名实例属性和出口节点，不能只放在返回字典。
 
 ## 单步推进与默认 RK4
 
-动态模型必须把“单步调度”和“状态积分”作为两个明确职责设计：
+动态模型必须把“入口调度”和“状态积分”作为两个明确职责设计：
 
-1. **单步推进方法**负责从时刻 `t_n` 推进到 `t_n + DT`。它每次重新读取并保护
-   `self.Data.PGV["DT"]`，快照本步边界和旧状态，调用积分方法生成候选状态，执行边界
-   保护、出口发布和最终提交。一次调度只能推进一个项目步长，不能在 `Run`、`DRun` 或
-   辅助方法之间重复推进。
+1. **单步推进方法**负责从时刻 `t_n` 推进到 `t_n + DT`。普通设备每次从
+   `self.Data.PGV["DT"]` 读取并保护步长，快照本步边界和旧状态，调用积分方法生成候选
+   状态，执行边界保护、出口发布和最终提交。一次入口调用只能推进一个项目步长。
 2. **RK4 方法**只负责根据状态方程计算一个候选积分结果，不直接修改模板状态或真实出口。
    新开发模块默认将两个职责分别组织为 `_advance_one_step` 和 `_rk4_step`；已有模块存在
    同等职责的方法时可以保留历史名称，但必须在模块说明和方法 docstring 中标明对应关系。
@@ -126,7 +150,7 @@ Dynamic V1 的动态后处理不消费入口业务结果，追加 `DRun()` 的�
    混用新旧时间层级。每个 `k` 的 shape、单位必须与状态向量一致；中间状态和步末候选
    状态均执行已确认的数值保护，但只有步末候选可以提交。
 5. 步内存在触满、耗尽、相态切换等事件时，先定位事件，再对事件前后分别执行 RK4 子步；
-   所有子步时长之和必须等于本次 `DT`，不得因分段多推进或少推进时间。
+   所有子步时长之和必须等于本次步长，不得因分段多推进或少推进时间。
 6. 只有存在明确特殊情况时才改用其他积分方法，例如刚性方程、微分代数方程、强不连续
    模型、已验证解析更新，或 RK4 无法满足稳定性/性能要求。改变默认 RK4 属于 A 级结果
    风险，必须展示原因、候选方法、稳定性、精度、步长和性能影响，由开发者确认后实施。
@@ -139,8 +163,8 @@ Dynamic V1 的动态后处理不消费入口业务结果，追加 `DRun()` 的�
 [`references/numerical-boundary-protection.md`](../cslab-module-contract/references/numerical-boundary-protection.md)，
 本节只补充动态状态特有要求：
 
-1. 每步读取并保护 `self.Data.PGV["DT"]`；只有有限正值才推进状态。无有效步长时保留上一
-   已提交状态，不得读取外部 `dt` 参数或回退为硬编码步长。
+1. 普通设备每步读取并保护 `self.Data.PGV["DT"]`；只有有限正值才推进状态。无有效步长时
+   保留上一已提交状态，不得读取外部参数或回退为硬编码步长。
 2. 状态更新必须符合开发者选择的守恒方程和数值方法。容差归零、状态投影、备用计算和
    上一有效值只能按已确认的保护表实施，不能把所有非有限值无条件替换为零。
 3. 干设备、满设备、上下限、溢流、停机和状态投影属于正常边界模型，开发者确认后按
@@ -153,13 +177,13 @@ Dynamic V1 的动态后处理不消费入口业务结果，追加 `DRun()` 的�
 
 ## 输出和诊断
 
-按 `cslab-module-contract` 建立输出消费者表。Dynamic V1 普通设备通常只需要同名模板实例
-属性和出口节点；某类模块没有出口节点或没有模板输出时，只实现真实存在的消费者。每步
-集中同步状态，避免实时展示、落库和下游看到不同时刻的数据。
+按 `cslab-module-contract` 建立输出消费者表。普通 V4 动态设备通常只需要同名模板实例属性
+和出口节点；某类模块没有出口节点或没有模板输出时，只实现真实存在的消费者。每步集中
+同步状态，避免实时展示、落库和下游看到不同时刻的数据。
 
-Dynamic V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，不要依赖 `print` 调试。
-临时观测使用项目 logger 或在重定向范围外采集，至少记录 `begin_time`、
-`self.Data.PGV["DT"]`、关键状态、方程流入项、流出项和残差；验证成功后删除临时代码。
+不要依赖 `print` 调试。临时观测使用项目 logger 或测试入口外部采集，至少记录当前时间、
+实际入口、`self.Data.PGV["DT"]`、关键状态、方程流入项、流出项和残差；验证成功后删除
+临时代码。
 
 ## 源码整图验证
 
@@ -167,21 +191,25 @@ Dynamic V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，�
 2. 使用 `python -B` 直接加载目标 `.py`，确认 `module.__file__` 指向本地源码。
 3. 从服务器获取项目画布和数据，但在本地运行测试契约中已经确认的实际工程入口；先在
    当前项目检索并读取入口，不假定目录名或文件名。网页运行结果不能证明本地源码正确。
-4. 核对测试工程 `Data.PGV["DT"]` 的实际值，连续记录多个时间步，验证状态确实按该步长
-   变化、方向符合所选模型、守恒残差满足容差、边界被下游采用，并覆盖静止、正常变化和
-   边界工况。
-5. 动态进程受控停止，只清理本次启动的 PID；删除临时观测代码后再做最终回归。
+4. 在运行前记录控制器映射、进程角色、模板 `startFun` 和预期设备入口；V4 子进程必须由
+   `runServer_v2.py` 驱动控制器 `run()`，并核对设备 `RunDynamic()` 确实被调用。
+5. 核对普通设备测试工程 `Data.PGV["DT"]` 的实际值，连续记录多个时间步，验证状态确实按
+   该步长变化、方向符合所选模型、守恒残差满足容差、边界被下游采用，并覆盖静止、正常
+   变化和边界工况。
+6. 动态进程受控停止，只清理本次启动的 PID；删除临时观测代码后再做最终回归。
 
 ## 动态源码最小性检查
 
 交付前除通用最小实现检查外，再核对：
 
-1. `Run`、`DRun` 和每个辅助方法都有明确的状态、边界或诊断职责；常量导数的一次性包装、
-   重复同步和从未读取的状态应删除或内联。
-2. `DRun` 的兼容参数只为调度签名保留，并在 docstring 中说明不参与步长计算。
+1. 实际入口和每个辅助方法都有明确的状态、边界或诊断职责；常量导数的一次性包装、重复
+   同步和从未读取的状态应删除或内联。
+2. V4 普通主进程模块只实现模板确认的 `Run()`，子进程模块只在确认角色后实现
+   `RunDynamic()`；不为“兼容”增加 `DRun()`、`run_dynamic()`、`dynamic_run()` 或其他
+   控制器小写入口。
 3. 没有已核实的返回消费者时，不定义 `result`、`result_fail` 或只为返回而存在的属性。
-4. 使用 `cslab-module-contract/scripts/audit_module_source.py --family dynamic-v1 <文件>`
-   做静态预检，再结合模板、控制器和运行测试人工确认。
+4. 使用 `cslab-module-contract/scripts/audit_module_source.py --family generic <文件>` 做静态
+   预检，再结合模板、控制器和运行测试人工确认实际入口、步长读取和单步推进次数。
 
 ## 禁止事项
 
@@ -191,6 +219,6 @@ Dynamic V1 在算法调用期间重定向 stdout 并抑制 `RuntimeWarning`，�
 3. 在 `__init__` 读取构造后才挂载的模板属性。
 4. 把逐步调用旧稳态算法包装成动态模型，却没有明确状态方程和时间推进方法。
 5. 只更新内部状态，不同步模板属性和出口节点。
-6. 把动态步长作为外部业务参数传入，或使用 `DRun` 的 `dt` 兼容形参代替
-   `self.Data.PGV["DT"]`。
-7. Dynamic V1 没有返回消费者时仍机械构造 `result`、空结果或成功二元组。
+6. 在 V4 新模块中使用历史 `DRun()`，或把控制器方法 `run_dynamic()` 错写成设备方法。
+7. 普通动态设备绕过 `self.Data.PGV["DT"]`，使用外部传入步长或硬编码步长推进。
+8. 没有返回消费者时仍机械构造 `result`、空结果或成功二元组。

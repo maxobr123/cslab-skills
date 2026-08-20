@@ -23,7 +23,7 @@ L3 模块族包(每族一组,按 L0 流水线增量生产)
     cslab-operation-flashtank FlashTank 专用骨架:MRO、变量词汇、*_BaseOn、暖启动
     cslab-operation-flash     闪蒸计算契约(Flash 家族方法签名)
     cslab-operation-phy-prop  统一物性入口契约(phy_prop 标量/矩阵与属性总表)
-    cslab-dynamic-module      动态通用契约:Run/DRun 生命周期、状态初始化、整图源码验证
+    cslab-dynamic-module      动态通用契约:V4 Run/RunDynamic/RunOde 入口、状态初始化、整图源码验证
     (控制/设计/化原等族包待建)
 ```
 

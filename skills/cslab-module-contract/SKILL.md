@@ -114,8 +114,9 @@ uv run python .opencode/skills/skills/cslab-module-contract/scripts/audit_module
 - 入口方法除 `self` 外不得有无默认值参数。
 - **方法名不存在时不报错**——框架按"成功、空结果"处理(静默假成功)。
   交付前必须核对模板 `startFun` 与方法名严格一致。
-- 某些计算族会在此基础上追加生命周期调用；动态 V1 的 `Run`/`DRun` 时序必须加载
-  `cslab-dynamic-module`，不要在平台通用契约中猜测族专有入口。
+- 某些计算族会改写入口分派；当前动态 V4 的模板 `Run`、子进程 `RunDynamic` 和特殊
+  `RunOde` 契约必须加载 `cslab-dynamic-module`，不要在平台通用契约中猜测族专有入口，
+  也不要把控制器小写运行方法当成设备方法。
 
 ## 入口方法返回约定
 

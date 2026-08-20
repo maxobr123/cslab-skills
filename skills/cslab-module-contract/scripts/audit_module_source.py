@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""审计 CSLab 算法源码的文档完整性、明显冗余和动态 V1 契约。"""
+"""审计 CSLab 算法源码的文档完整性、明显冗余和历史动态 V1 契约。"""
 
 from __future__ import print_function
 
@@ -29,8 +29,8 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", help="待审计的 Python 源码路径")
     parser.add_argument(
-        "--family", choices=("generic", "dynamic-v1"), default="generic",
-        help="选择通用规则或 DynamicCalculateControlV1 专项规则",
+        "--family", choices=("generic", "dynamic-v1-legacy"), default="generic",
+        help="选择通用规则；仅维护明确锁定 V1 的旧工程时使用历史动态规则",
     )
     parser.add_argument(
         "--allow-result", action="store_true",
@@ -229,7 +229,7 @@ def main(argv=None):
         return 2
 
     findings = audit_common(tree)
-    if args.family == "dynamic-v1":
+    if args.family == "dynamic-v1-legacy":
         findings.extend(audit_dynamic_v1(tree, args.allow_result))
 
     findings.sort(key=lambda item: (item.line, item.level, item.code))
