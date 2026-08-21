@@ -1,181 +1,55 @@
 ---
 name: cslab-module-contract
-description: Use when writing any CSLab algorithm module regardless of family (steady operation, dynamic, control, design). Defines constructor injection, startFun, consumer-driven return and output contracts, feedback, Chinese source documentation, and minimal implementation requirements.
+description: Use when writing any CSLab algorithm module. Defines the platform-wide constructor injection, startFun, consumer-driven outputs, feedback, Chinese documentation, numerical protection, and minimal-source boundaries; family-specific algorithms belong to their family Skill.
 ---
 
-# 模块运行契约(平台通用,L2)
+# CSLab 模块通用契约
 
-本 Skill 定义**所有模块族共享**的运行契约,由模板系统与调度框架决定,与具体
-设备类型无关。族专有的变量词汇、继承方法、算法惯用法见对应族包
-(通用稳态单元：`cslab-operation-unit-skeleton`；FlashTank：
-`cslab-operation-flashtank`)。
+本 Skill 只拥有所有模块族共享的平台契约。设备变量、方程、继承方法和族专用返回形式由
+对应族 Skill 定义，不在这里重复。
 
-## 参数注入契约(核心)
+## 必须遵守的边界
 
-调度框架实例化模块的方式:按模板算法槽位 `importlib` 动态加载类,然后
-`inspect.signature(类.__init__)` 取形参名集合,**同名注入**:
+1. 模板属性、节点和入口依赖严格名称匹配；`__init__` 形参及 `startFun` 不是自由命名。
+2. 模板值直接注入，框架不做单位换算；算法内部和模板默认值均使用已确认的 SI 口径。
+3. 未连接的 FLOW/Energy 节点可为 `None`，访问前必须判空。
+4. 只实现已经核实的消费者：入口返回、同名实例属性和出口节点相互独立，不机械补齐。
+5. `feedback` 由框架动态注入；模块不自定义它，不用 `print` 代替平台诊断。
+6. 算法开发和交付对象只能是 `.py`；`.pyd/.so` 是编译依赖，不读取、探测或反编译。
+7. 每个保留的方法、参数、状态和结果字段必须有契约、物理、消费者、异常隔离、复用、
+   性能或测试价值；没有依据的代码删除或内联。
 
-1. 模板属性 `name` 与形参**严格同名** → 作为关键字参数进构造函数;
-   不同名 → 实例化后挂到 `instance.__dict__`(实例属性,构造函数里看不到)。
-2. 节点(流股/能量流等)按**节点名 = 形参名**注入对象;类形参含 `Flow_list`
-   时聚合注入 `[{"name": 流股实例, "nodeName", "position", "direction",
-   "fraction", "Phase", "UnitType"}]`(仅聚合 FLOW 流股节点),
-   `direction=="1"` 进、`"0"` 出。
-3. **未连接的 FLOW/Energy 节点注入 `None`**,访问前必须判空。
-4. `Data`(物性数据对象)、`pro`(项目 id)只要出现在形参里就由框架自动注入;
-   `moduleName`/`moduleLabel`/`moduleID`/`startFun` 恒挂到实例。
-5. **注入不做单位换算**:模板默认值与前端下发值直接进算法,算法内部一律按
-   SI 计算,模板默认值必须已是 SI 数值。
-6. 类型编码的特殊注入:组分系数类属性额外生成 `{属性名}_UnitType` 并转
-   `np.array`;列表类转 `np.array`;引用赋值(多)类生成 `{属性名}__formula`。
+## 按需读取
 
-因此 `__init__` 的形参名不是自由命名，而是模板契约。当前调度器只把同名属性作为
-构造关键字参数传入；未声明属性不会进入 `**kwargs`，而是在构造完成后写入
-`instance.__dict__`。需要这些未声明属性的状态初始化必须延迟到入口方法。保留
-`**kwargs` 用于直接构造和未来扩展；存在业务基类时首行调用正确的
-`super().__init__(...)`，无业务基类时不要伪造继承链。
+不要默认加载全部资料。只读取当前任务涉及的 reference：
 
-## 源码文档规范(强制)
+| 当前任务 | 必须读取 |
+|---|---|
+| 修改构造形参、模板属性/节点、`startFun`、返回值、实例属性、出口或 `feedback` | [`references/runtime-contract.md`](references/runtime-contract.md) |
+| 新建/修改算法源码、补注释、删除冗余方法或执行源码审计 | [`references/source-documentation.md`](references/source-documentation.md) |
+| 涉及物性、衡算、迭代、积分、优化、矩阵或状态更新的数值保护 | [`references/numerical-boundary-protection.md`](references/numerical-boundary-protection.md) |
 
-1. 算法源码中的模块说明、类说明、方法 docstring 和行内解释性注释统一使用简体中文；
-   变量名、接口名、单位、数学符号和第三方专有名词保留原文。
-2. 文件顶部在编码声明之后、所有 import 之前放模块级 docstring，至少写清：文件用途、
-   适用范围、核心物理/数学方程、主要求解或离散方法、调度入口及时序、关键单位与假设。
-   动态模块必须明确列出状态微分方程及采用的积分方法，不能只写“动态计算模块”。
-3. 每个方法都必须有中文 docstring，包括 `__init__`、私有辅助方法、`staticmethod`、
-   `classmethod` 和 `property`。docstring 必须按实际情况完整说明：方法目的；每个参数的
-   含义、类型、单位、形状和数据来源；返回值；会修改的实例状态或出口对象；异常/失败
-   行为；主要执行步骤。业务方法不得只用一句“计算某值”代替完整说明。
-4. 复杂热路径或动态积分方法除 docstring 外，继续使用项目规定的步骤式中文注释分段；
-   注释解释物理口径、索引语义、状态变更和回退原因，不逐行复述显而易见的代码。
-5. 每条主要方程必须标明方程类型和衡算对象，并逐一解释变量的物理意义、单位、维度、
-   正负号和数据来源；同时写明初始条件、边界条件、闭合关系及求解方法。
-6. “模型假设”只记录开发者已确认的选择，并说明适用范围和影响；不得把 Agent 的临时
-   推测写成既定事实。外部模型或关联式需在模块说明中记录可追溯资料来源。
-7. 主入口方法的 docstring 必须按实际顺序说明计算过程，明确温度、压力、组成、流量等
-   关键状态是输入值、固定值、继承值还是方程求解结果。
+族专用信息按任务加载：
 
-注释以“信息完整”为目标，不以篇幅为目标。简单且无参数、无返回值、无副作用的方法可
-简短说明；复杂方法才增加步骤式行内注释。不要逐行复述赋值、循环和条件判断。交付前按
-方法逐个核对 docstring 与实际签名、单位、状态修改和异常路径一致，不能只检查是否存在
-三引号。
+- 稳态 operation：`cslab-operation-unit-skeleton`；
+- Flash/物性调用：`cslab-operation-flash`、`cslab-operation-phy-prop`；
+- FlashTank：`cslab-operation-flashtank`；
+- 动态生命周期：`cslab-dynamic-module`；
+- 测试方法：`cslab-module-verify`；
+- 后台模板事实：`cslab-modulet-api`。
 
-## 通用数值边界保护
+## 最短执行流程
 
-开发包含物性、衡算、迭代、积分、优化、矩阵运算或动态状态更新的代码时，必须读取
-[`references/numerical-boundary-protection.md`](references/numerical-boundary-protection.md)，
-按其中的保护优先级、统一返回约定和示例实现当前模型实际需要的保护。
+1. 从当前模板和控制器确认构造注入、真实入口及输出消费者。
+2. 读取上表中与改动相符的 reference，建立单位、坐标、返回和失败契约。
+3. 编写最小必要源码；中文文档必须解释实际物理口径、参数、状态修改和失败行为。
+4. 对可恢复数值边界只做保护，不把模板缺失或接口错误伪造成合法输入。
+5. 使用 `scripts/audit_module_source.py` 预检，再按 `cslab-module-verify` 做真实入口验证。
 
-数值边界保护用于吸收正常运行中可能出现的越界、浮点扰动、局部计算失败和状态发布
-失败，不属于错误处理。保护方法必须满足：
+## 完成门禁
 
-1. 不抛异常，不调用 `feedback("error", ...)`，不中止计算任务。
-2. 优先按物理关系恢复合法状态，而不是直接把所有非法值替换为零。
-3. 无法得到可信候选值时，保留上一有效值或上一已提交状态。
-4. 动态计算无法安全推进时跳过当前步，不使用虚构的默认步长、默认组成或默认物性。
-5. 修改公开状态或出口对象前先计算候选值；发布失败时恢复旧值。
-6. 矩阵计算只保护失败 case，不影响其他正常 case。
-7. 保护过程可以返回内部保护标记或掩码，供测试和调试使用，但不得形成业务错误。
-8. 具体上下限、容差、回退值和投影关系必须来自开发者已确认模型，不设置全项目通用
-   魔法数。
-
-本节只约束可恢复的数值边界保护。模板字段缺失、接口契约不匹配、未支持模型等非数值
-边界问题仍按本 Skill 的 `feedback` 和所属控制器契约处理，不得用数值保护伪造输入。
-
-## 最小必要实现(强制)
-
-编码前后都要为新增或保留的代码建立“用途与消费者”检查。每个方法、参数、内部状态、
-缓存、返回值和结果字段至少对应以下一项：
-
-1. 当前模板、调度器或公开调用契约；
-2. 开发者已确认的物理方程、数值方法或边界处理；
-3. 已核实的前端、落库、下游节点或调用方消费者；
-4. 明确的异常隔离、复用、性能或独立测试价值。
-
-不能对应任何一项时删除或内联，不得以“以后可能用到”为由保留。只包装一个显而易见
-表达式、没有复用和独立失败语义的辅助方法通常应内联；未读取的私有状态、未使用的普通
-参数和重复同步必须删除。模板同名注入参数、入口兼容形参和框架反射入口即使算法体内
-不读取，也属于契约代码，不能擅自删除；必须在 docstring 中说明其消费者和保留原因。
-
-交付前使用 [`scripts/audit_module_source.py`](scripts/audit_module_source.py) 做静态预检：
-
-```powershell
-uv run python .opencode/skills/skills/cslab-module-contract/scripts/audit_module_source.py `
-  --family generic <目标.py>
-```
-
-脚本只能发现可确定的语法、文档、调试残留和明显无消费者问题；模板反射、外部调用、物理
-必要性和注释语义仍须人工核对。静态警告不能直接作为删除代码的唯一依据。
-
-## startFun 契约
-
-平台基础控制器按模板 `startFun` **无参**调用 `getattr(instance, startFun)()`：
-
-- 入口方法除 `self` 外不得有无默认值参数。
-- **方法名不存在时不报错**——框架按"成功、空结果"处理(静默假成功)。
-  交付前必须核对模板 `startFun` 与方法名严格一致。
-- 某些计算族会改写入口分派；当前动态 V4 的模板 `Run`、子进程 `RunDynamic` 和特殊
-  `RunOde` 契约必须加载 `cslab-dynamic-module`，不要在平台通用契约中猜测族专有入口，
-  也不要把控制器小写运行方法当成设备方法。
-
-## 入口方法返回约定
-
-先读取实际控制器和所属族 Skill，确认入口返回值是否有消费者，再决定返回形式。平台基础
-控制器可接收二元组，也会把非二元组结果按成功处理；这不代表所有模块都必须构造结果。
-
-- 已核实控制器消费计算状态和前端结果时，使用 `(计算状态, 结果字典)`；常见稳态成功
-  返回 `True, self.result`，失败返回 `False, {}` 或已确认的 `result_fail`。
-- 控制器不消费入口业务结果时，成功路径不构造 `result`，也不为了统一外观返回空字典。
-  错误传播方式按所属族的控制器契约执行。
-- 控制器版本、`startFun` 或包装器改变时重新核实，不把某一族的返回约定提升为全局规则。
-
-需要 `result` 时才定义对应属性，格式为：
-
-```python
-{"result": {
-    "出口温度": {"value": self.T, "unitType": "Temperature"},
-    "汽化率": {"value": self.VF},          # 无量纲可省 unitType
-}}
-```
-
-需要该通道时外层必须是 `{"result": {...}}`;键为面向用户的中文名;已知 `unitType` 枚举:
-`Temperature`、`Pressure`、`Enthalpy flow`、`Mole flow`、`Mole enthalpy`。
-
-## 输出消费者矩阵
-
-三种通道相互独立，但不是所有模块都必须同时实现。只实现当前模板、控制器和上下游实际
-消费的通道；在技术方案中记录每个输出的消费者和验证方式。
-
-| 通道 | 何时必须实现 | 机制 |
-|---|---|---|
-| `result` 字典 | 已核实入口返回值被前端结果消费者读取 | 随入口返回值推送面向用户的结果 |
-| 同名实例属性 | 模板输出属性需要实时展示、落库或被引用 | 在入口或动态推进后给同名实例属性赋值；框架按属性 id 处理支持的类型 |
-| 出口节点 | 管网或下游模块需要该边界 | 把已确认字段写回出口流股、能量流或其他节点对象 |
-
-不得为没有消费者的通道构造占位数据，也不得因为某通道不适用而漏掉其他真实消费者。
-动态 V1 的具体返回与实时推送规则以 `cslab-dynamic-module` 为准；稳态 operation 的结果
-规则以对应族 Skill 为准。
-
-## feedback 契约
-
-- 签名 `self.feedback(label, msg, code=None)`;`label ∈ {"error","warn"}`,
-  msg 中文；`error` 表示无法继续，随后按所属控制器可识别的失败返回或异常传播结束；
-  `warn` 表示提示但不中断。
-- 错误码 5 位:首 1-2 位为模块/领域段,后位为序号,同模块内同段递增。
-  **错误码属平台约定,不得自造**:新告警没有对应码时先与开发者确认,
-  或暂不带 `code` 只传文案。
-- `feedback` 由调度框架在实例化后**动态注入**,模块不定义它。需要直接本地实例化时，
-  可在测试代码或模块文件顶部放
-  空桩 `def feedback_func(*args, **kwargs): pass`,本地测试时手动
-  `instance.feedback = feedback_func`;类内直接调用 `self.feedback(...)`。
-- 不用 `print` 上报信息。不可继续的错误先调用 `feedback`，再按所属族控制器能够识别的
-  失败返回或异常传播方式结束；不得仅返回一个控制器会忽略的失败状态。
-
-## 通用禁止事项
-
-1. 形参名/入口方法名与模板不一致(注入与调用是纯名字匹配,错了不报错)。
-2. 在模块内做单位换算或接收非 SI 输入。
-3. 未核实消费者就机械生成 `result`，或漏掉已经确认的实例属性、出口节点消费者。
-4. 未连接节点(`None`)不判空就访问。
-5. 不依赖编译模块源码存在；不读取、修改、探测或反编译 `.pyd/.so`。
-6. 保留没有契约、物理、消费者、异常隔离、复用或测试价值的代码。
+- 模板形参与入口方法严格同名；入口除框架确认的特殊签名外按控制器要求调用。
+- 每个输出都有真实消费者；无消费者时不构造 `result`、空字典或占位字段。
+- 数值保护保留守恒和上一有效状态，不抛错、不虚构默认值。
+- 所有说明性注释为中文，复杂方法的方程、变量、单位、步骤和状态副作用完整。
+- 目标源码由本地 `.py` 实际加载，未把编译文件当成开发文件或完成证据。

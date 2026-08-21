@@ -1,193 +1,76 @@
 ---
 name: cslab-operation-flashtank
-description: Use only when writing or modifying a FlashTank-family steady-state unit in domain/operation whose template or verified contract uses FFin/FDout/FWout, Flash specification dispatch, vessel fields, reaction support, or utility accounting.
+description: Use only for a verified steady FlashTank-family domain/operation unit whose template uses the family-specific vessel, Flash specification, reaction, utility, or FFin/FDout/FWout contracts. Do not apply it to unrelated operation or dynamic modules.
 ---
 
-# FlashTank 家族专用骨架(operation 族,L3)
+# FlashTank 家族入口
 
-本 Skill 只定义 FlashTank（平衡闪蒸罐）及经模板确认与其同契约模块的专用范式。
-不得把这里的 MRO、`FFin/FDout/FWout`、`DutyIn`、容器字段或反应字段套到 Heater、
-Pump 或其他稳态单元。通用稳态单元先读 `cslab-operation-unit-skeleton`；确认目标属于
-FlashTank 家族后再加载本文。必须沿用该家族已验证的变量名与继承方法，不发明同义新名、
-不重写基类算法。平台通用契约见 `cslab-module-contract`；闪蒸方法细节见
-`cslab-operation-flash`,物性方法见 `cslab-operation-phy-prop`。
+本 Skill 只定义经模板或同族运行证据确认的稳态 FlashTank（平衡闪蒸罐）业务边界。Heater、
+Pump、普通分离器以及 dynamic 设备不得套用本族 MRO、端口、容器、反应或输出字段。
 
-## 继承与 __init__ 模式
+开发交付物只能是 `.py`；`.pyd/.so` 不是开发文件。编译依赖只按公开 Skill 契约调用，
+不得读取、修改、反射、试探或反编译。
 
-```python
-from domain.operation.Flow import Flow
-from domain.operation.Flash import Flash
-from domain.operation.Public import Utility_U
-from domain.baseClass.ReactionBase import ReactionBase
-from domain.baseClass.Vessel import Vessel
-from domain.math.mathmethod import Comp_restore, Comp_filter
+## 加载顺序
 
+1. 先读取 [`cslab-operation-unit-skeleton`](../cslab-operation-unit-skeleton/SKILL.md)，执行
+   稳态 `Run()`、事务和消费者发布的通用规则。
+2. 必须读取
+   [`operation-variables.md`](../cslab-operation-unit-skeleton/references/operation-variables.md)。
+   它是变量名、单位、组分坐标、FlashTank/Vessel/Utility/Data 字段的唯一事实源。
+3. 构造器注入、`startFun`、`feedback`、中文源码文档、数值保护和返回契约读取
+   [`cslab-module-contract`](../cslab-module-contract/SKILL.md)。
+4. Flash 方法签名读取 `cslab-operation-flash`；物性入口读取
+   `cslab-operation-phy-prop`，本族代码不得复制这些算法。
 
-def feedback_func(*args, **kwargs): pass
+## 家族确认门禁
 
+编码前必须从目标模板、开发人员负责范围内可读 `.py` 或已验证同族契约确认：
 
-class MyTank(Utility_U, Vessel, ReactionBase):
-    def __init__(self, FFin: Flow, FDout: Flow, FWout: Flow,
-                 Input_type1=None, Input_value1=None,
-                 Input_type2=None, Input_value2=None,
-                 Method_bag=None, Data=None, mode=None,
-                 DT=0.01, DOA=1e-9, K_time=200,
-                 Utility=None,
-                 Height=None, Diameter=None,
-                 **kwargs):
-        super().__init__(Data=Data, Method_bag=Method_bag, DT=DT, DOA=DOA, K_time=K_time)
-```
+- 输入和输出端口是否确为 `FFin/FDout/FWout`，各自的相语义及是否还有 `DutyIn`。
+- 两组输入规格、实际分派标志、状态字段大小写以及暖启动字段。
+- Flash、Vessel、Utility、ReactionBase 能力的真实来源和 `super().__init__` 契约。
+- 模板输出属性、容器/设计字段、反应 ID、错误码和所有输出消费者。
 
-1. 形参顺序:流股对象在前(`FFin`/`FDout`/`FWout`,多流股用 `Flow_list`),
-   然后输入条件对、`Method_bag`/`Data`、迭代参数、设备参数,末尾 `**kwargs`。
-2. 仅当目标 FlashTank 模板或本家族已验证契约包含对应能力时组合基类：闪蒸/物性能力
-   来自 Flash 家族，公用工程使用 `Utility_U`，容器使用 `Vessel`，反应使用
-   `ReactionBase`。不得据此推断其他 operation 模块的 MRO。
-3. 公用工程惯用法:`if Utility: self.Utility = self.Data.PUW[Utility]`。
-4. 反应门控:`self.RList`(反应 id 列表)非空才做反应计算。
-5. **输出/占位属性必须在 `__init__` 初始化**(0 或零向量):模板中所有
-   `is_input=否` 的属性,以及动态占位属性(如 `HHL`、`PW`、`H_dewT`、`H_satT`、
-   `V_mol`、`L_mol`、`FY_mol`、`FY_mass`、`LXI_mass`、`VXI_mass`、`VXI_mol`、
-   `Q`、`n_num_mol`、`FY_VXI_mol`、`KA_Cont`、`P_A_Ideal` 等,按模板而定)。
-   未初始化的属性会导致落库比对与后续访问出错;**落库属性改名 = 字段丢失**。
+不能从类名、旧示例或变量词汇表反推某个能力已经存在。表外新变量走
+`cslab-module-develop` 的后台配置确认流程；模板落库属性必须严格同名。
 
-## 权威变量词汇表
+## Run 核心阶段
 
-变量含义、单位、组分坐标、Flow/FlashTank 端口、Vessel、Utility、ReactionBase 和
-`Data` 上下文字段统一读取
-[`cslab-operation-unit-skeleton/references/operation-variables.md`](../cslab-operation-unit-skeleton/references/operation-variables.md)。
-该表是唯一权威定义；本文只保留 FlashTank 家族的生命周期和使用规则。
+FlashTank 的 `Run()` 仍遵守稳态先算后提交，并按以下阶段组织：
 
-## 继承方法词汇表
+1. 接收能量流规格，校验 `FFin`、输入条件、流量和完整组成。
+2. 判断暖启动有效性，过滤组成并保存成对的跳过/保留索引。
+3. 按已确认的 `*_BaseOn` 调用继承 Flash 方法，校验并回写完整闪蒸状态。
+4. 计算相流量、能量、容器派生量，以及模板已启用的反应和公用工程。
+5. 全部成功后恢复完整坐标，提交模板实例属性、`FDout/FWout`、能量流和被消费的结果。
 
-| 来源 | 方法 | 用途 |
-|---|---|---|
-| Flash 家族 | `flash_TP` / `flash_TVF` / `flash_PVF` / `flash_TPVF` / `flash_BubT` / `flash_DewT` / `flash_BubP` / `flash_DewP` / `flash_DP` / `flash_DT` / `flash_HP` / `LLE` / `VLLE` | 闪蒸与泡露点,签名见 `cslab-operation-flash` |
-| Flash 家族 | `phy_prop` | 标量/矩阵统一物性入口,见 `cslab-operation-phy-prop` |
-| Flash 家族 | `get_H_LV_JB` / `get_F_LV_JB` / `get_H_F_LV_JB` / `get_duty_by_flash` | 相焓/相流量/焓流/热负荷组合 |
-| `Utility_U` | `Public_F_P(Utility=self.Utility, Duty=self.duty, T=self.T)` → `(FU_mass, electricity, Price_U, CO2_emissions)` | 公用工程耗量/电耗/费用/碳排 |
-| `ReactionBase` | `Reaction_Base(comp_list=, FXI_mol_L=, FXI_mol_V=, F_vol_L=, F_vol_V=, RP=, RT=, VF=)` → `(FXI_mol_out, FL_mol, LXI_mol, A, FV_mol, VXI_mol)` | 反应计算,标准调用见下方 `getReaction` |
-| `domain.math.mathmethod` | `Comp_filter(XI)` → `(活跃组成, _Is0, Not0)`;`Comp_restore(v, _Is0, Not0)` → 全长数组 | 组分过滤/恢复 |
+## FlashTank 专有边界
 
-## 输入条件与 *_BaseOn 分派
+- 只组合模板确认的基类，不重新实现闪蒸迭代、相焓、Rachford-Rice、容器或反应算法。
+- `Comp_filter` 后至 `Comp_restore` 前的相组成和 K 值均为活跃局部坐标，并始终传当前
+  全局 `SkipIndex`；方法包、活跃组分或索引变化后禁止复用旧 `K0`。
+- `VF=0/1` 时不存在相的组成置零用于清除旧输出，不作为有效相态参与计算。
+- 反应仅在模板确认 `ReactionBase` 且 `RList` 非空时执行，并遵守已验证的入口流股口径；
+  不得擅自回改闪蒸主状态。
+- 构造器只初始化模板、框架或下游消费者确实读取的输出属性。没有消费者的结果、占位方法、
+  Vessel/Utility/Reaction 字段一律不构造。
+- 稳态 `result` 仅在控制器消费时生成；dynamic 罐不得复用本 Skill 的返回格式、状态推进或
+  时间步语义，应使用 `cslab-dynamic-module`。
 
-输入以 `Input_type1/Input_value1`、`Input_type2/Input_value2` 两对给出,类型
-枚举 `"温度" / "压力" / "汽化率" / "热负荷"`。`get_value()` 惯用法:
+## 按需读取
 
-- `"温度"` → `self.T = self.T_init = value`
-- `"压力"` → 值 > 0:`self.P_in = self.P_init = value` 并同步
-  `self.FFin.P_out = self.P_in`;值 ≤ 0 表示相对上游的压差:
-  `self.P_in = self.P_init = self.FFin.P_out + value`
-- `"汽化率"` → `self.VF = self.GasRat = value`
-- `"热负荷"` → `self.duty = self.duty_init = value`
-- `get_value()` 末尾固定校验:`if not self.P_init: self.feedback("warn",
-  "压力不是输入条件")`(无对应码,不带 code)。
-- 连接能量流时 `set_duty()` 强制第二条件为热负荷:`self.Input_type2 = "热负荷";
-  self.Input_value2 = self.DutyIn.Duty`,为 0 时 warn 码 30602。
+- 需要确认 MRO、构造参数、模板输出初始化、输入规格分派或暖启动时，读取
+  [`references/construction-and-dispatch.md`](references/construction-and-dispatch.md)。
+- 需要反应调用、分相出口、能量流反写或多通道字段提交时，读取
+  [`references/reaction-and-outputs.md`](references/reaction-and-outputs.md)。
+- 规格输入校验、Flash 结果校验、相能量和事务回滚还应按需读取
+  [`flash-specification-run.md`](../cslab-operation-unit-skeleton/references/flash-specification-run.md)。
 
-基类根据 T/P/VF/duty 哪些已知置位分派标志,`Run()` 按标志走分支,**不要自己
-写输入组合判断替代它**:
+## 完成检查
 
-| 标志 | 已知 | 调用 | 补算 |
-|---|---|---|---|
-| `self.TP_BaseOn` | T, P | `flash_TP` | `get_duty_by_flash` 求 duty |
-| `self.Te_BaseOn` | T, VF | `flash_TVF` | 同上 |
-| `self.Pe_BaseOn` | P, VF | `flash_PVF` | 同上 |
-| `self.DP_BaseOn` | P, duty | `flash_DP` | 直接得 T/VF |
-| `self.DT_BaseOn` | T, duty | `flash_DT` | 直接得 P/VF |
-
-## Run() 标准五段式
-
-```python
-def Run(self):
-    # 1) 能量流与输入校验
-    self.set_duty()
-    self.XI_mol = self.FFin.XI_mol
-    self.F_mol = self.FFin.F_mol
-    if self.F_mol == 0:
-        self.feedback("warn", "输入流股没有流量", 30501)
-        return False, {}
-    if sum(self.XI_mol) < 0.000001:
-        self.feedback("warn", "输入流股没有输入组分", 30500)
-        return False, {}
-    if len([i for i in [self.T, self.P_in, self.VF, self.duty] if i is None]) > 2:
-        self.feedback("error", "输入条件给定不足", 40500)
-        return False, {}
-
-    # 2) 初值 warm start:条件有变化 → 保留旧初值;T/P/VF/duty 全未变时,
-    #    组成未变 → Comp_filter(K0) 复用;组成变了 → init_starter() 清空
-    #    (同时 self.P = self.P_in 保持基类兼容字段同步)
-    # 3) 组分过滤(进闪蒸前必做):
-    self.XI_mol, self._Is0, self.Not0 = Comp_filter(np.array(self.XI_mol))
-
-    # 4) 按 *_BaseOn 分派闪蒸(见上表),结果存 self.Flash_core;
-    #    初值 T0/P0/K0/VF0 与 SkipIndex=self._Is0 一并传入
-    # 5) 回写:
-    #    Flash_core → self.T/P_in/VF/XI_mol/LXI_mol/VXI_mol/K
-    #    (VF>=1 时 LXI_mol 置零向量,VF<=0 时 VXI_mol 置零向量)
-    #    get_F_LV_JB → FV_mol/FL_mol;压降/公用工程/密度等派生量
-    #    Comp_restore 把 XI_mol/VXI_mol/LXI_mol/K 恢复到全组分坐标
-    #    getReaction()(若有反应)→ set_value()
-    return True, self.result
-```
-
-初值管理(warm start 语义,注意方向):
-
-- `init_starter()`:`P0/T0/K0/VF0/XI0/duty0` 全部置 `None`。
-- `set_value()` 开头保存本轮收敛值作下轮初值:`self.K0 = self.K; self.VF0 =
-  self.VF; self.P0 = self.P_in; self.T0 = self.T; self.XI0 = self.XI_mol;
-  self.duty0 = self.duty`。
-- 复用规则:输入条件(T/P/VF/duty)有变化时,**保留**旧初值作为新工况的迭代
-  起点(不清空——流程迭代中条件每轮微变,清空会废掉 warm start);四个条件
-  全部未变时:组成也未变 → 直接复用
-  (`self.K, _Is0, Not0 = Comp_filter(np.array(self.K0))`);
-  组成变了 → `init_starter()` 清空。
-- 方法包或组分集(活跃组分数/SkipIndex)变化后严禁复用旧 `K0`。
-
-## 反应计算惯用法 getReaction
-
-反应以**入口流股口径**计算(组分摩尔流量、相体积流量取自 `FFin`,`VF=0`),
-结果只更新反应相关字段,**不回改闪蒸得到的 `F_mol`/`XI_mol`/`VF` 状态量**:
-
-```python
-def getReaction(self):
-    self.F_vol = self.FFin.F_vol
-    if self.RList:
-        (self.FXI_mol_out, self.FL_mol, self.LXI_mol, A,
-         self.FV_mol, self.VXI_mol) = self.Reaction_Base(
-            comp_list=self.Data.CAS,
-            FXI_mol_L=self.FFin.FLXI_mol,
-            FXI_mol_V=self.FFin.FVXI_mol,
-            F_vol_L=self.FFin.FL_vol,
-            F_vol_V=self.FFin.FV_vol,
-            RP=self.P_in, RT=self.T, VF=0)
-```
-
-## 出口流股回写与 Flow 契约
-
-`set_value()` 把结果写到出口 Flow（本族已确认的下游节点消费者），
-连接能量流时还要**反向回写换热端温度**:
-
-```python
-self.FDout.F_mol = self.FV_mol; self.FDout.P_in = self.P_in
-self.FDout.T = self.T; self.FDout.XI_mol = self.VXI_mol; self.FDout.GasRat = 1
-self.FWout.F_mol = self.FL_mol; self.FWout.P_in = self.PW_out
-self.FWout.T = self.T; self.FWout.XI_mol = self.LXI_mol; self.FWout.GasRat = 0.0
-if self.DutyIn:
-    self.DutyIn.T0 = self.T
-    self.DutyIn.T1 = self.T + 2.0 if self.duty > 0.0 else self.T - 2.0
-```
-
-Flow 字段含义与单位使用权威变量词汇表；本族读写的具体字段以目标模板和上方
-`set_value()` 契约为准。
-
-`result` 键示例(格式契约见 `cslab-module-contract`):出口温度、出口压力、
-汽化率、热负荷、压降等,中文键 + `{"value", "unitType"}`。
-
-## FlashTank 家族禁止事项
-
-1. 不发明词汇表之外的同义属性名(如 `self.temp` 替代 `self.T`)。
-2. 不重写/复制基类算法(闪蒸迭代、相焓分支、Rachford-Rice 等)。
-3. 不混用全组分坐标与活跃组分坐标(`Comp_filter` 之后、`Comp_restore` 之前,
-   一切相组成都在活跃坐标;`SkipIndex=self._Is0` 恒传)。
-4. 汽化率边界不处理就输出(VF=0/1 时对应相组成必须置零向量)。
+- 目标已由模板或同族证据确认为 FlashTank，且 MRO、端口和字段均有消费者证据。
+- 规格分派、完整/活跃坐标、暖启动、单相边界及失败事务正确。
+- 反应、容器和 Utility 只在模板启用时执行，没有复制基类算法。
+- 实例属性、`FDout/FWout`、能量流和入口返回只发布真实消费者需要的内容。
+- 交付文件为 `.py`，没有把本族稳态范式扩散到 dynamic 或其他 operation 家族。

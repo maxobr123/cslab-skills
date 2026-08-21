@@ -1,229 +1,87 @@
 ---
 name: cslab-module-verify
-description: Use when locally testing or debugging any CSLab algorithm module, including test-entry discovery, property tests built from pro and Method_bag data, single-module tests, direct Python source loading, project full-flow execution, obtainData fetching, verification checklists, process cleanup, and deployment notes.
+description: 本地测试或调试任意 CSLab 算法模块时使用；负责测试入口发现、目标源码直载、pro 与 Method_bag 物性测试、单模块及整图验证、动态时间序列验收和进程清理。
 ---
 
 # CSLab 算法模块本地验证
 
-## 环境硬约束(先读)
+本 Skill 只定义验证流程。测试前先取得 `cslab-module-develop` 已确认的测试契约，再按
+`cslab-module-contract`、所属族 Skill 和实际消费者确定预期行为。
 
-- 先遵守 `cslab-module-develop` 的“开发文件边界”：本 Skill 的目标开发文件、源码验证
-  对象和算法交付物只能是 `.py`；`.pyd` 不能作为开发文件或源码完成证明。
-- 固定使用 **Python 3.7.6** 和项目锁定依赖。编译依赖必须与当前平台和解释器 ABI
-  匹配：Windows 使用 `*.cp37-win_amd64.pyd`，Linux 使用对应 CPython 3.7 `.so`。
-- 开发部门通常在大量 `.pyd/.so` 依赖下工作，只修改自己负责范围内保留的 `.py`
-  源码。编译依赖视为稳定公开能力，不读取、修改、反编译、反射或试探其内部实现；调用
-  契约以项目 Skill 为准。
-- 当前平台存在匹配二进制时正常运行验证。只有缺少兼容二进制、依赖服务或必要测试数据
-  时才退化为**静态审查**：按 `cslab-module-contract` 与所属族包逐项核对，并明确说明
-  “未运行验证”及具体原因，不得笼统归因于操作系统。
-- 取数接口 `obtainData/` 免鉴权,但需要能访问 `${CSLAB_SERVER_HOST}`。
+## 硬约束
 
-## 目标源码直载验证
+- 固定使用 Python 3.7.6 和项目锁定依赖；默认用 `uv run python`。Windows 编译依赖须
+  匹配 `cp37-win_amd64`，Linux 使用对应 CPython 3.7 `.so`。
+- 目标开发、源码审查和算法交付对象只能是 `.py`。`.pyd/.so` 是稳定运行依赖，不是
+  源码、参考实现或验收证明；不得读取、修改、反编译、反射或试探其内部实现。
+- 开发人员可在大量二进制依赖下只修改自己负责的 `.py`；隔离目标同名二进制时，其他
+  依赖二进制保持可用。
+- 只有缺少兼容二进制、依赖服务或必要数据时才退化为静态审查，并明确报告“未运行验证”、
+  具体原因和剩余风险，不能笼统归因于操作系统。
+- 网页服务器运行的是服务器文件，不能替代本机加载目标 `.py` 的验收结果。
 
-开发者要求验证新 `.py` 时，只禁用**同模块同名**目标二进制，其他依赖二进制保持不变：
+## 最短验证流程
 
-1. 将目标 `X.cp37-win_amd64.pyd` 改名为 `X.cp37-win_amd64.pyd1`，先确认目标名不存在；
-2. 创建或修改 `X.py`，不编译目标模块，不读取、反编译、反射或探测原二进制；
-3. 使用 `python -B` 或 `PYTHONDONTWRITEBYTECODE=1` 防止生成 `.pyc` 验收产物；
-4. 正常导入后检查模块 `__file__` 指向本地 `X.py`；这只证明导入来源，不探测实现；
-5. 测试结束按开发者要求决定是否恢复原文件名，不擅自覆盖已有文件。
+1. 从测试契约取得测试类型、真实入口、`pro`、必要的 `Method_bag`、工况、消费者和验收
+   标准；缺失时回到开发门禁，不临时猜测。
+2. 优先使用开发者指定入口；未指定时在当前项目检索候选，读取其数据加载、控制器和启动
+   签名后确认。Skill 不固定测试目录或文件名。
+3. 按需隔离目标同名二进制，以 `python -B` 加载目标 `.py`，检查
+   `module.__file__` 明确指向该文件；实际执行结果才是源码验收证据。
+4. 先做语法、导入和源码质量预检，再按风险选择单独物性、单模块、完整工程或动态整图。
+5. 验证正常、边界、退化和恢复工况；核对已确认衡算、状态、消费者、错误传播和数值保护。
+6. 删除临时观测代码，受控停止本次进程，复查无残留后记录真实结果和未覆盖风险。
 
-临时改名只用于排除 Python 对同名二进制的导入优先级，不能计为算法修改，不能进入开发
-成果、交付文件或完成项。验收结论必须来自实际加载并执行的 `X.py`。
+## 按需读取路由
 
-Windows 项目根目录运行脚本时使用：
+| 当前任务 | 必须读取 |
+|---|---|
+| 隔离同名二进制、确认源码导入、发现项目入口、源码预检 | [references/source-loading-and-entry-discovery.md](references/source-loading-and-entry-discovery.md) |
+| `pro + Method_bag` 物性测试或稳态单模块测试 | [references/property-and-single-module-testing.md](references/property-and-single-module-testing.md) |
+| 完整项目、上下游耦合、Dynamic V4、持续进程或离线整图 | [references/full-flow-and-dynamic-testing.md](references/full-flow-and-dynamic-testing.md) |
+| 数值保护分支 | `cslab-module-contract/references/numerical-boundary-protection.md` |
+| 动态入口、RK4、状态提交与步长所有权 | `cslab-dynamic-module` |
+| 稳态返回、Flow、Flash、FlashTank 或物性接口 | 对应 operation 族 Skill |
 
-```powershell
-$env:PYTHONPATH='.'
-uv run python -B <脚本路径>
-```
+只读取当前验证方式所需资料，不默认加载全部脚手架。
 
-## 源码质量预检
+## 测试类型的不变事实
 
-在运行前执行通用源码审计脚本：
+### 单独物性
 
-```powershell
-uv run python .opencode/skills/skills/cslab-module-contract/scripts/audit_module_source.py `
-  --family generic <目标.py>
-```
+测试脚本路径不固定。使用开发者提供的 `pro + Method_bag` 请求 `chemicalData`，调用
+`instantiation_data(...)` 构造 `Data`，实例化 `Flash`、`MethodLV` 或其他适当公开对象，
+再调用统一标量或矩阵物性接口。按已确认参考值、标量对比、误差阈值或物理约束验收。
 
-该脚本检查 Python 语法、中文模块/类/方法 docstring、残留 `print`、明显未使用的私有方法
-和私有状态。动态入口、返回消费者和步长来源必须结合当前控制器角色、模板与运行测试人工
-核对；历史 `dynamic-v1-legacy` 审计模式不能用于当前 V4 新模块。
+### 单模块
 
-## 测试入口与物性测试形式
+按真实模板和调用方实例化模块及 Flow，准备必要入口状态，只调用实际 `startFun`。结果
+通道由消费者决定：需要返回的稳态模块核对返回形态；没有返回消费者的动态模块核对同名
+实例属性、出口节点、状态序列和错误传播，不得为测试新增 `result` 或空返回。
 
-测试文件路径不是平台固定契约。先使用开发者指定的实际入口；未指定时在当前项目中检索
-候选测试脚本或工程运行文件，读取其数据加载、计算控制器和启动方式，再与开发者确认。
-不得假定其他开发者仓库存在某个示例目录、文件名或脚本。
+### 完整本地工程
 
-单独物性验证时，在当前项目选择或新建实际测试脚本，按以下形式执行：
+使用当前项目真实存在、以 `pro` 加载数据并实例化控制器的入口；按其签名提供 `pk`、
+`special_pk`、服务地址等参数。本机 Python 进程必须加载本地调度库和 `domain/` 文件。
+整图至少验证加载来源、执行顺序、上下游边界、衡算和退出清理。
 
-1. 使用开发者提供的 `pro` 和 `Method_bag` 请求 `chemicalData`。
-2. 调用 `instantiation_data(...)` 构造 `Data`。
-3. 按目标属性实例化 `Flash`、`MethodLV` 或其他公开且合适的物性对象。
-4. 调用统一的标量或矩阵物性接口，并传入该属性要求的温度、压力、组成等参数。
-5. 按已确认的参考值、标量对比、误差阈值或物理约束验收。
+### Dynamic V4
 
-完整本地工程验证使用当前项目实际存在的工程运行入口。该入口应以 `pro` 加载项目数据并
-实例化相应的稳态、动态、设计、化原或特殊计算控制器；按实际签名补充 `pk`、
-`special_pk`、服务器地址等参数。Skill 只约定这种执行形式，不约定入口目录和文件名。
+- 从实际控制器与模板确认设备入口：普通主进程通常为 `Run`，子进程为 `RunDynamic`，
+  特殊 ODE 模板才使用 `RunOde(ts, dt)`；当前新模块不得以 V1 `DRun` 作为验收入口。
+- 普通动态设备的单步 `dt` 来自 `self.Data.PGV["DT"]`，不是外界随意传参；一次入口调用
+  只推进一个 `DT`。
+- 普通常微分动态模型默认验证经典 RK4；特殊方法必须已有确认依据，并验证对应稳定性和精度。
+- 连续采集多个时间步，验证状态方向、连续性、守恒、边界、出口发布和回滚；无返回消费者
+  时不构造业务返回。
 
-## 取数接口
+## 通用完成检查
 
-- `POST ${CSLAB_SERVER_HOST}/cslab-server/obtainData/chemicalData/`
-  body:`{"pro": <项目id>, "rely_cal_data_type": {"relyState": "RelyAll", "relyDataType": [], "方法包": [<Method_bag>]}}`
-  (`rely_cal_data_type` 可省略,缺省取全部)
-  → 物性/组分/方法包数据(喂给 `instantiation_data`)。
-- `POST ${CSLAB_SERVER_HOST}/cslab-server/obtainData/CalculateData/`
-  → 项目模块属性、节点连接、流股和执行顺序数据；也可使用
-  `HttpLoadData(host).load_module_data(payload)`。
-- `pro` 是项目 id(32 位 hex),由开发者提供一个含目标组分与方法包的测试项目。
-- 历史脚本里的 `"calData"` 端点在当前服务端无对应实现,新脚手架不要用。
-
-## 稳态业务单模块脚手架
-
-以下是需要稳态入口结果消费者时的范式(取数 → 建 Data → 建 Flow → 建模块 →
-`get_value` → `Run` → 核对已确认输出)。不要把它套到不消费入口返回的动态模块：
-
-```python
-if __name__ == "__main__":
-    from domain.getdata.obtain_data import RequestsServer
-    from domain.getdata.complAll import *
-    from domain.operation.Flow import Flow
-    import json, time
-
-    pro = "<测试项目id>"
-    Method_bag = "<开发者确认的方法包id>"
-    chemical_data = json.loads(
-        RequestsServer().post_request(
-            {
-                "pro": pro,
-                "rely_cal_data_type": {
-                    "relyState": "RelyAll",
-                    "relyDataType": [],
-                    "方法包": [Method_bag],
-                },
-            },
-            "chemicalData",
-        )["data"])
-    Data: compl_init = instantiation_data(**chemical_data)
-    print("组分:", {i["cas"]: i["alias"] for i in Data.comp})
-
-    fin = Flow(Data=Data, Method_bag=Method_bag)
-    dout = Flow(Data=Data, Method_bag=Method_bag)
-    wout = Flow(Data=Data, Method_bag=Method_bag)
-    fin.flow_prop(T=350, P_in=101325, XI_mol=[0, 0.5, 0.5, 0, 0], F_mol=10)
-
-    m = MyTank(Data=Data, Method_bag=Method_bag,
-               FFin=fin, FDout=dout, FWout=wout,
-               Input_type1="温度", Input_value1=370,
-               Input_type2="压力", Input_value2=101325,
-               mode=0, Height=2, Diameter=1)
-    m.feedback = feedback_func          # 本地空桩,替代框架注入
-    t0 = time.time()
-    m.get_value()
-    state, result = m.Run()
-    print("耗时 %.3f s" % (time.time() - t0), state)
-    print(result)
-```
-
-要点:
-
-1. 组成向量长度必须等于测试项目的组分数,顺序与 `Data.comp` 一致。
-2. 反应类模块传 `RList=list(Data.ReactionData.keys())`。
-3. 本地必须挂 feedback 空桩,否则调用 `self.feedback` 时 AttributeError。
-4. 入口流股要先赋好状态(`flow_prop` 或先 `Run()` 上游 Feed),保证 `FFin.FH`
-   等字段可用,再跑本模块。
-
-## 通用验证检查单
-
-跑通后逐项核对,并把结论写进交付说明:
-
-1. 先按模板、实际控制器和所属族 Skill 列出本次输出消费者及预期返回；不适用的通道不得
-   为了通过测试而补占位代码。
-2. 已确认入口消费者需要 `(bool, dict)` 时，核对成功和失败返回；已确认需要 `result` 时，
-   再检查外层 `{"result": {...}}`、中文键和 `unitType`。不消费返回值的族核对其实际状态
-   和错误传播。
-3. 模板中需要实时展示、落库或引用的同名实例属性，在入口或状态推进后确有正确值。
-4. 按模板和所属族契约写全出口节点字段；逐项验证质量、组分、能量或其他已选衡算闭合。
-5. 同输入重复运行结果一致；存在缓存/暖启动时验证改输入后不会复用失效状态。
-6. 覆盖所属模型的正常、边界和退化工况，数值非负性、归一性及上下限符合已确认方案。
-   按 `cslab-module-contract` 的
-   [`references/numerical-boundary-protection.md`](../cslab-module-contract/references/numerical-boundary-protection.md)
-   验证有限值、范围、组成、数学定义域、守恒、求解器、状态提交和矩阵局部保护。
-7. 数值保护触发时不得抛异常、发送错误反馈或中止任务；确认能够恢复时采用受保护结果，
-   无法恢复时保留上一有效值或上一已提交状态，并且不会留下部分修改的输出对象。
-8. 无 `print` 残留,无未定义变量分支(静态过一遍所有 if 分支)。
-9. 逐项验证开发者选择的模型、假设、初始条件、边界条件和验收标准；报告方程闭合误差。
-10. 源码的模块说明、方法注释、方程变量表和实际实现一致，不能保留已否决方案描述。
-11. 目标模块 `__file__` 明确指向 `.py`；已有同名 `.pyd` 能运行不能替代源码验收。
-
-不同模块族在以上通用项之上加载各自检查单；例如闪蒸模块检查相态与焓流，动态模块
-检查时间序列、状态连续性和守恒关系，不能把某一设备族的出口字段当作所有模块通用要求。
-
-### Dynamic V4 专项检查
-
-1. 从实际工程入口确认控制器映射、主/子进程角色和模板 `startFun`。V4 普通主进程设备
-   调用模板入口（通常 `Run`），动态子进程设备调用 `RunDynamic`，特殊 ODE 模板才调用
-   `RunOde(ts, dt)`。当前 V4 主、子控制器均由 `runServer_v2.py` 调用 `run()`；控制器小写
-   运行方法不是设备入口。
-2. 当前 V4 不再自动追加 `DRun`。旧测试若直接调用 `DRun`，只能作为历史 V1 证据，必须
-   改为调用当前模板和控制器实际入口后才能验收新模块。
-3. 普通动态设备没有已核实返回消费者时，实际入口成功路径不返回业务信息，也不定义
-   `result` 或空结果占位。
-4. 普通设备每个状态推进步从 `self.Data.PGV["DT"]` 读取并校验有效步长；改变该项目配置
-   后，实际时间序列应按新步长变化。
-5. 实时展示通过同名实例属性验证，下游边界通过实际出口节点验证；没有对应消费者的通道
-   记为不适用。
-6. `Data.PGV["DT"]` 或候选动态状态无效时，确认当前步不推进、旧状态和出口保持一致，
-   且不会抛异常、发送错误反馈或构造没有消费者的失败返回。
-7. 连续记录多个时间步，检查状态方向、守恒残差、边界工况和一拍时序；至少覆盖干/满
-   设备、容差内外、候选状态保护和出口发布回滚。
-8. 核对实际入口一次调用只推进一个 `Data.PGV["DT"]`，不会由多个公开入口或辅助方法重复
-   积分；存在事件分段时，各 RK4 子步时长之和必须等于本次 `DT`。
-9. 普通常微分动态模型默认验证经典四阶 RK4 的 `k1/k2/k3/k4` 阶段、状态 shape、单位和
-   时间层级，并与解析解、可靠参考结果或步长减半结果比较精度。未使用 RK4 时，核对技术
-   方案中已经确认特殊原因、替代方法及相应稳定性和精度验证。
-
-## 本地整图与动态联调
-
-服务器网页只负责画布、模板实例值和物性数据；本地测试由本机 Python 进程加载本地
-调度库与 `domain/` 文件。不得把网页服务器运行结果当作本地源码验收结果。
-
-使用测试契约中已经确认的实际工程运行文件，例如：
-
-```powershell
-$env:PYTHONPATH='.'
-uv run python -B <实际工程运行文件>
-```
-
-运行前按实际入口核对 `host/pro/callow_way/pk/special_pk` 等参数。动态 `run()` 会持续等待退出
-信号，测试必须记录本次启动的 PID，采用受控停止，并只清理本次进程。工具调用被中断后
-立即检查残留 `uv/python` 进程，不影响其他项目服务。
-
-动态模块不依赖 `print` 作为验收通道。临时状态观测使用现有 logger 或由测试入口外部采集，
-日志至少包含时间、实际设备入口、关键状态和衡算输入/输出；确认成功后删除临时代码并做
-最终回归。
-
-整图验证至少确认：本地目标 `.py` 被加载、执行顺序正确、关键状态随时间符合所选模型、
-守恒误差在容差内、上下游边界得到更新、退出后无残留进程。
-
-## 离线整图联调
-
-`chemical-scheduler` 的 `runServerLocal` 可本地跑整张画布:数据来自
-`data/calculateDependData/<项目>/` 下的 YAML(先对线上项目 POST
-`obtainData/CalculateData|chemicalData` 导出保存),且依赖 etcd 服务。
-仅在需要验证多模块耦合/执行顺序时使用;单模块一律用 `__main__` 脚手架。
-
-## 部署与登记
-
-1. 新 `.py` 落到模板槽位对应的 `domain/<目录>/`；例如 `operation.X` 对应
-   `domain/operation/X.py`，`dynamic.X` 对应 `domain/dynamic/X.py`。没有上传 API，
-   文件走部署渠道。
-2. 模板算法槽位指向 `<目录>.<文件名>`(类名不同时
-   `<目录>.<文件名>;<类名>`),`startFun` 与入口方法严格同名——拼错不会报错,
-   会静默按成功处理,必须人工核对。
-3. 上线前在测试项目里从前端触发一次计算，逐项确认技术方案中已记录的消费者得到正确
-   数据；不适用的 `result`、落库属性或出口节点不要求构造占位值。
+- 逐项列出已确认消费者；不适用通道没有占位实现。
+- 入口返回、同名实例属性和出口对象分别按其真实消费者验证。
+- 组成、质量、能量或其他所选衡算闭合；结果符合单位、shape、坐标和误差标准。
+- 同输入可复现；缓存或暖启动在输入变化后不复用失效状态。
+- 覆盖正常、边界、容差内外、局部失败和恢复；保护不留下部分提交状态。
+- 源码说明、方法注释、方程变量和实际实现一致；没有临时 `print` 或未定义分支。
+- `module.__file__` 指向目标 `.py`；同名二进制可运行不能替代此证据。
+- 只报告实际执行的验证；失败、未覆盖和环境阻塞不得隐藏。
